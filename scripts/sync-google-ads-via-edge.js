@@ -3,6 +3,8 @@
 
 require('dotenv').config();
 
+const { normalizeSupabaseBase } = require('./lib/supabase-origin');
+
 const DEFAULT_LOOKBACK_DAYS = 30;
 
 function env(name, fallback = '') {
@@ -48,26 +50,6 @@ function resolveDateRange() {
 
 function customerId(value) {
   return String(value || '').replace(/\D/g, '');
-}
-
-function normalizeSupabaseBase(value) {
-  let parsed;
-  try {
-    parsed = new URL(String(value || '').trim());
-  } catch {
-    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
-  }
-  if (
-    parsed.protocol !== 'https:'
-    || parsed.username
-    || parsed.password
-    || parsed.search
-    || parsed.hash
-    || (parsed.pathname !== '/' && parsed.pathname !== '')
-  ) {
-    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
-  }
-  return parsed.origin;
 }
 
 async function readJson(response) {

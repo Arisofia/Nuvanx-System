@@ -25,7 +25,7 @@ function withEnv(values, fn) {
     });
 }
 
-test('normalizes only a credential-free HTTPS Supabase origin', () => {
+test('normalizes only a credential-free Supabase project HTTPS origin', () => {
   assert.equal(normalizeSupabaseBase('https://project.supabase.co/'), 'https://project.supabase.co');
   for (const invalid of [
     'http://project.supabase.co',
@@ -33,6 +33,11 @@ test('normalizes only a credential-free HTTPS Supabase origin', () => {
     'https://user@example.com',
     'https://project.supabase.co/rest/v1',
     'https://project.supabase.co/?x=1',
+    'https://project.supabase.co:8443',
+    'https://supabase.co',
+    'https://foo.bar.supabase.co',
+    'https://project.supabase.co.attacker.test',
+    'https://attacker.test',
     'not-a-url',
   ]) {
     assert.throws(() => normalizeSupabaseBase(invalid), /valid HTTPS origin/);
@@ -122,10 +127,10 @@ test('uses service role only for privileged RPC and internal secret for Edge', a
   });
 });
 
-test('rejects an invalid Supabase origin before any credential-bearing request', async () => {
+test('rejects an HTTPS non-Supabase origin before any credential-bearing request', async () => {
   let calls = 0;
   await withEnv({
-    SUPABASE_URL: 'http://project.supabase.co',
+    SUPABASE_URL: 'https://attacker.test',
     SUPABASE_SERVICE_ROLE_KEY: 'service-role-value',
     FROM_DATE_INPUT: '2026-09-01',
     TO_DATE_INPUT: '2026-09-05',
