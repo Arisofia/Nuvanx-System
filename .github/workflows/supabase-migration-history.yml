@@ -6,6 +6,7 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'scripts/check-supabase-migration-history.mjs'
+      - 'scripts/meta-lead-attribution-db.test.mjs'
       - '.github/workflows/supabase-migration-history.yml'
       - '.github/actions/supabase-link-run/**'
   workflow_dispatch:
@@ -23,7 +24,7 @@ jobs:
   history-parity:
     name: Supabase · migration history parity
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -38,6 +39,13 @@ jobs:
 
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts
+
+      - name: Execute Meta attribution migrations on PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          npm run test:meta-attribution-db
 
       - name: Validate remote migration history parity
         uses: ./.github/actions/supabase-link-run
