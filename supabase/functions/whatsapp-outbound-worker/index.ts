@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { sendWhatsAppText } from "../_shared/whatsapp-provider.ts";
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
@@ -97,14 +98,6 @@ async function decryptMessage(row: ClaimRow, keyring: Record<string, string>): P
   const decoded = new TextDecoder().decode(plaintext);
   if (!decoded || decoded.length > 4096) throw new Error("queue_payload_invalid");
   return decoded;
-}
-
-function providerError(data: any): { code: string | null; message: string } {
-  const error = data?.error || data?.errors?.[0] || null;
-  return {
-    code: error?.code === undefined || error?.code === null ? null : String(error.code),
-    message: String(error?.message || data?.message || "WhatsApp provider error").slice(0, 500),
-  };
 }
 
 async function finalizeSend(
@@ -243,96 +236,64 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    let waRes: Response;
-    let waData: any = {};
-    try {
-      waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: row.normalized_phone,
-          type: "text",
-          text: { preview_url: false, body: message },
-        }),
-        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-      });
-      waData = await waRes.json().catch((bodyError: unknown) => {
-        const reason = bodyError instanceof Error ? bodyError.name : "unknown";
-        console.error(
-          `[whatsapp-outbound-worker] provider body read failed request=${row.request_id} status=${waRes.status} reason=${reason}`,
-        );
-        return {};
-      });
-    } catch (error: unknown) {
-      const reason = error instanceof Error ? error.name : "provider_transport_error";
+    const outcome = await sendWhatsAppText({
+      accessToken,
+      phoneNumberId,
+      graphVersion,
+      to: row.normalized_phone,
+      message,
+      timeoutMs: PROVIDER_TIMEOUT_MS,
+    });
+
+    if (outcome.status !== "accepted") {
+      const manualReview = outcome.status === "unknown";
       const ledgerTracked = await finalizeSend(
         admin,
         row,
-        "unknown",
-        null,
-        null,
-        reason,
-        "Meta provider outcome is unknown after transport failure",
-      );
-      if (ledgerTracked) await finishPayload(admin, row, true);
-      // If ledger finalization failed, leave the payload in sending. Stale-sending
-      // reconciliation will mark the reserved request unknown without ever resending.
-      unknown += 1;
-      continue;
-    }
-
-    const explicitProviderError = Boolean(waData?.error || waData?.success === false);
-    const messageId = String(waData?.messages?.[0]?.id || "").trim() || null;
-
-    if (!waRes.ok || explicitProviderError) {
-      const provider = providerError(waData);
-      const ambiguous = waRes.status >= 500;
-      const ledgerTracked = await finalizeSend(
-        admin,
-        row,
-        ambiguous ? "unknown" : "failed",
-        null,
-        waRes.status,
-        provider.code,
-        provider.message,
+        outcome.status,
+        outcome.providerMessageId,
+        outcome.providerHttpStatus,
+        outcome.errorCode,
+        outcome.errorMessage,
       );
       if (ledgerTracked) {
-        const payloadTracked = await finishPayload(admin, row, ambiguous);
+        const payloadTracked = await finishPayload(admin, row, manualReview);
         if (!payloadTracked) {
           console.error(`[whatsapp-outbound-worker] payload finalization deferred request=${row.request_id}`);
         }
       }
-      if (ambiguous) unknown += 1;
+      if (manualReview) unknown += 1;
       else failed += 1;
       continue;
     }
 
+    const messageId = outcome.providerMessageId;
     if (!messageId) {
+      // Shared provider transport classifies this as unknown, but retain a final
+      // fail-closed guard in case that contract is changed incorrectly.
       const ledgerTracked = await finalizeSend(
         admin,
         row,
         "unknown",
         null,
-        waRes.status,
+        outcome.providerHttpStatus,
         "missing_provider_message_id",
         "Meta returned success without a message id",
       );
-      if (ledgerTracked) {
-        const payloadTracked = await finishPayload(admin, row, true);
-        if (!payloadTracked) {
-          console.error(`[whatsapp-outbound-worker] payload finalization deferred request=${row.request_id}`);
-        }
-      }
+      if (ledgerTracked) await finishPayload(admin, row, true);
       unknown += 1;
       continue;
     }
 
-    const ledgerTracked = await finalizeSend(admin, row, "accepted", messageId, waRes.status, null, null);
+    const ledgerTracked = await finalizeSend(
+      admin,
+      row,
+      "accepted",
+      messageId,
+      outcome.providerHttpStatus,
+      null,
+      null,
+    );
     if (ledgerTracked) {
       const payloadTracked = await finishPayload(admin, row, false);
       if (!payloadTracked) {
