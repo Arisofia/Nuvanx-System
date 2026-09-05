@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 const migrationPath = 'supabase/migrations/20260513150000_schedule_meta_daily_insights.sql';
 const masterPath = '.github/workflows/master.yml';
+const reconciliationPath = 'scripts/fetch-meta-daily-insights-via-edge.js';
 const migration = readFileSync(migrationPath, 'utf8');
 const master = readFileSync(masterPath, 'utf8');
+const reconciliation = readFileSync(reconciliationPath, 'utf8');
 const aggregates = readFileSync('supabase/functions/daily-aggregates/index.ts', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 const ownership = readFileSync('docs/operations/daily-automation-ownership.md', 'utf8');
@@ -40,6 +42,7 @@ function scheduledMetaOwnerFiles() {
 describe('daily automation ownership', () => {
   it('is executed by the normal backend CI gate', () => {
     expect(packageJson.scripts.test).toContain('vitest run supabase/functions');
+    expect(packageJson.scripts.test).toContain('meta-daily-insights-edge-owner.test.js');
   });
 
   it('keeps Supabase pg_cron as the 05:00 UTC primary Meta ingestion owner', () => {
@@ -52,14 +55,28 @@ describe('daily automation ownership', () => {
 
   it('keeps GitHub at 07:00 UTC as the explicit reconciliation owner with a real date range', () => {
     expect(master).toContain("- cron: '0 7 * * *'");
-    expect(master).toContain('fetch_meta_insights');
-    expect(master).toContain('from_date="$FROM_DATE_INPUT"');
-    expect(master).toContain('to_date="$TO_DATE_INPUT"');
-    expect(master).toContain('${from_date}');
-    expect(master).toContain('${to_date}');
+    expect(master).toContain(`run: node ${reconciliationPath}`);
+    expect(master).not.toContain('-H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"');
+    expect(master).not.toContain('-H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}"');
+    expect(reconciliation).toContain("action: 'fetch_meta_insights'");
+    expect(reconciliation).toContain("env('FROM_DATE_INPUT')");
+    expect(reconciliation).toContain("env('TO_DATE_INPUT')");
     expect(aggregates).toContain('type DailyAggregatesRequest = MetaDateRangeInput &');
     expect(aggregates).toContain('resolveMetaDateRange(input)');
     expect(ownership).toContain('Reconciliation/backfill — GitHub Master System');
+  });
+
+  it('keeps service role scoped to runtime-secret RPC and uses internal secret at the Edge boundary', () => {
+    expect(reconciliation).toContain('/rest/v1/rpc/nvx_get_runtime_secret');
+    expect(reconciliation).toContain("p_name: 'REVOPS_INTERNAL_SECRET'");
+    expect(reconciliation).toContain('Authorization: `Bearer ${key}`');
+    expect(reconciliation).toContain("'/functions/v1/daily-aggregates'") || expect(reconciliation).toContain('/functions/v1/daily-aggregates');
+    expect(reconciliation).toContain("'x-nvx-internal-secret': internalSecret");
+
+    const edgeCall = reconciliation.slice(reconciliation.indexOf("fetchImpl(`${base}/functions/v1/daily-aggregates`"));
+    expect(edgeCall).not.toContain('Authorization:');
+    expect(edgeCall).not.toContain('apikey:');
+    expect(edgeCall).toContain("redirect: 'error'");
   });
 
   it('allows exactly the canonical pg_cron and Master System scheduled Meta writers', () => {
