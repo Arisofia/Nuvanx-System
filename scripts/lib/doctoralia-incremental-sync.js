@@ -1,6 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
+const { getPrimaryPhoneFromSubject } = require('./phone-normalization');
 
 const DEFAULT_CHUNK_SIZE = 100;
 
@@ -51,7 +52,16 @@ function normalizeKeyPart(value) {
 }
 
 function normalizeDoctoraliaId(value) {
-  return String(value ?? '').trim().toLowerCase();
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return '';
+
+  // Google Sheets/XLSX may materialize a numeric history id as text such as
+  // "155.0" while the legacy tab/DB stores "155". They are the same provider
+  // identifier and must produce one appointment identity. Leading zeroes are
+  // also presentation, not identity, for an all-numeric provider id.
+  const numeric = /^(\d+)(?:\.0+)?$/.exec(text);
+  if (!numeric) return text;
+  return numeric[1].replace(/^0+(?=\d)/, '') || '0';
 }
 
 function normalizePhone(value) {
@@ -68,6 +78,12 @@ function patientIdentity(record) {
 
   const phone = normalizePhone(record?.phone_normalized || record?.patient_phone || record?.phone);
   if (phone) return `ph:${phone}`;
+
+  // Historical materializations may have blank identity columns but retain a
+  // valid bracketed phone in the subject. Use the shared phone parser before
+  // falling back to mutable/free-form text so JS and PostgreSQL converge.
+  const subjectPhone = getPrimaryPhoneFromSubject(record?.subject);
+  if (subjectPhone) return `ph:${subjectPhone}`;
 
   const patientName = normalizeKeyPart(record?.patient_name);
   if (patientName) return `name:${patientName}`;
@@ -105,8 +121,10 @@ function buildStableAppointmentSourceKey(record) {
 
 function canonicalizeRecord(record) {
   const sourceKey = buildStableAppointmentSourceKey(record);
+  const normalizedDoctoraliaId = normalizeDoctoraliaId(record?.doctoralia_id);
   return {
     ...record,
+    doctoralia_id: normalizedDoctoraliaId || null,
     source_key: sourceKey,
     appointment_id: sourceKey,
     raw_data: {
