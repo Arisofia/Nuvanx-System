@@ -11,7 +11,6 @@ const REQUIRED = [
   'CLINIC_ID',
   'DOCTORALIA_SHEET_ID',
   'DOCTORALIA_DRIVE_FILE_ID',
-  'DOCTORALIA_APPOINTMENTS_SHEET_NAME',
   'ENCRYPTION_KEY',
   'REPORT_USER_ID',
 ];
@@ -127,4 +126,4 @@ if (missingRecommended.length > 0) {
   console.warn(`::warning::Recommended Daily Sync secrets not set: ${missingRecommended.join(', ')}`);
 }
 
-console.log('Daily Sync required secret validation passed.');
+console.log('Daily Sync required secret validation passed. Doctoralia appointment tab is code-owned as Base Completa Doctoralia.');

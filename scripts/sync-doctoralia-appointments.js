@@ -2,37 +2,27 @@
 'use strict';
 
 /**
- * Syncs the canonical Doctoralia appointments agenda from Google Sheets into
- * public.doctoralia_appointments_ingestion.
+ * Incrementally syncs the canonical Doctoralia appointments agenda from Google
+ * Sheets into public.doctoralia_appointments_ingestion.
  *
- * Required env vars:
- *   GOOGLE_SA_JSON / GOOGLE_DOCTORALIA_SERVICE_ACCOUNT / GOOGLE_SA_JSON_FILE / GOOGLE_API_KEY
- *   DOCTORALIA_APPOINTMENTS_SHEET_ID, DOCTORALIA_SHEET_ID, or DOCTORALIA_DRIVE_FILE_ID
- *   SUPABASE_URL or VITE_SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
- *
- * Optional env vars:
- *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (canonical value: Base Completa Doctoralia)
- *   DOCTORALIA_ALLOW_NON_CANONICAL_SHEET=true only for a controlled migration
- *   DOCTORALIA_APPOINTMENTS_SHEET_RANGE (default: A1:T5000)
- *   DOCTORALIA_APPOINTMENTS_MIN_ROWS (minimum/default: 1800)
- *   DOCTORALIA_APPOINTMENTS_PERMISSION_MODE (fail|warn; default: fail)
- *
- * Flags:
- *   --dry-run  Fetch and summarize Google Sheets rows without writing to Supabase.
+ * This is the sole operational Doctoralia appointment writer. Its source is
+ * intrinsically pinned to Base Completa Doctoralia; environment configuration
+ * cannot redirect the governed sync to a derived tab.
  */
 
 const fs = require('node:fs');
 const { google } = require('googleapis');
+const { createClient } = require('@supabase/supabase-js');
 const {
   getDoctoraliaAppointmentsSourceDecision,
 } = require('./lib/doctoralia-appointments-source.js');
 const {
-  countIngestedRecords,
   recordsFromRows,
   summarize,
-  upsertRecords,
 } = require('./populate-doctoralia-appointments');
+const {
+  syncIncrementalAppointments,
+} = require('./lib/doctoralia-incremental-sync.js');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const SHEET_ID = String(
@@ -57,6 +47,25 @@ function maskError(error) {
   return message
     .replace(/ya29\.[A-Za-z0-9._-]+/g, '[redacted-google-token]')
     .replace(/eyJ[A-Za-z0-9._-]+/g, '[redacted-jwt]');
+}
+
+function getSupabaseClient() {
+  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY.');
+  }
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function countIngestedRecords(supabase) {
+  const { count, error } = await supabase
+    .from('doctoralia_appointments_ingestion')
+    .select('source_key', { count: 'exact', head: true });
+  if (error) throw error;
+  return count || 0;
 }
 
 function getServiceAccountJson() {
@@ -132,12 +141,7 @@ async function fetchRows() {
 
 async function main() {
   if (SOURCE_DECISION.nonCanonicalIgnored) {
-    console.warn(
-      '[sync-doctoralia-appointments] Ignoring non-canonical configured sheet; governed sync is pinned to Base Completa Doctoralia. ' +
-        'Set DOCTORALIA_ALLOW_NON_CANONICAL_SHEET=true only for a controlled migration.',
-    );
-  } else if (SOURCE_DECISION.overrideAllowed && SOURCE_DECISION.resolved !== SOURCE_DECISION.canonical) {
-    console.warn('[sync-doctoralia-appointments] Controlled non-canonical appointments source override enabled.');
+    console.warn('[sync-doctoralia-appointments] Ignoring configured non-canonical sheet; governed sync is hard-pinned to Base Completa Doctoralia.');
   }
 
   let rows;
@@ -157,7 +161,7 @@ async function main() {
   console.table(totals);
 
   if (records.length < MIN_ROWS) {
-    throw new Error(`[sync-doctoralia-appointments] Parsed ${records.length} rows, below required minimum ${MIN_ROWS}. Check sheet name/range and export completeness.`);
+    throw new Error(`[sync-doctoralia-appointments] Parsed ${records.length} rows, below required minimum ${MIN_ROWS}. Check sheet range/export completeness.`);
   }
 
   if (DRY_RUN) {
@@ -165,8 +169,12 @@ async function main() {
     return;
   }
 
-  await upsertRecords(records, { replaceMode: true });
-  const tableCount = await countIngestedRecords();
+  const supabase = getSupabaseClient();
+  const result = await syncIncrementalAppointments(records, { supabase });
+  console.log('[sync-doctoralia-appointments] Incremental delta applied.');
+  console.table(result);
+
+  const tableCount = await countIngestedRecords(supabase);
   console.log(`[sync-doctoralia-appointments] Sync completed. doctoralia_appointments_ingestion now has ${tableCount} rows.`);
 
   if (tableCount < MIN_ROWS) {
@@ -184,9 +192,11 @@ if (require.main === module) {
 
 module.exports = {
   buildA1Range,
+  countIngestedRecords,
   fetchRows,
   getServiceAccountJson,
   getSheetsClient,
+  getSupabaseClient,
   isPermissionError,
   main,
 };
