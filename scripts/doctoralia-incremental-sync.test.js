@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   buildStableAppointmentSourceKey,
   dedupeCanonicalRecords,
+  patientIdentity,
   planIncrementalChanges,
 } = require('./lib/doctoralia-incremental-sync.js');
 
@@ -55,6 +56,17 @@ test('different appointment slot remains a different appointment', () => {
   assert.notEqual(
     buildStableAppointmentSourceKey(appointment()),
     buildStableAppointmentSourceKey(appointment({ appointment_date: '2026-09-17' })),
+  );
+});
+
+test('JS stable key is pinned to the PostgreSQL SHA-256 normalization contract', () => {
+  assert.equal(
+    buildStableAppointmentSourceKey(appointment({ doctoralia_id: ' 155 ' })),
+    'doctoralia_appt_v3:196db8882030fe73709aff62c43030545aeca7d0a9efbb6889f972bf7d76c786',
+  );
+  assert.equal(
+    patientIdentity(appointment({ doctoralia_id: null, phone_normalized: null, patient_phone: null, phone: null, patient_name: null, subject: '  .  PACIENTE   [600000000]  ' })),
+    'subject:. paciente [600000000]',
   );
 });
 
