@@ -5,7 +5,9 @@ const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
 const {
   buildStableAppointmentSourceKey,
+  canonicalizeRecord,
   dedupeCanonicalRecords,
+  normalizeDoctoraliaId,
   patientIdentity,
   planIncrementalChanges,
 } = require('./lib/doctoralia-incremental-sync.js');
@@ -59,14 +61,24 @@ test('different appointment slot remains a different appointment', () => {
   );
 });
 
-test('JS stable key is pinned to the PostgreSQL SHA-256 normalization contract', () => {
+test('JS stable key is pinned to PostgreSQL identity equivalence contract', () => {
+  const expected = 'doctoralia_appt_v3:196db8882030fe73709aff62c43030545aeca7d0a9efbb6889f972bf7d76c786';
+  assert.equal(buildStableAppointmentSourceKey(appointment({ doctoralia_id: ' 155 ' })), expected);
+  assert.equal(buildStableAppointmentSourceKey(appointment({ doctoralia_id: '155.0' })), expected);
+  assert.equal(buildStableAppointmentSourceKey(appointment({ doctoralia_id: '00155.000' })), expected);
+  assert.equal(normalizeDoctoraliaId('00155.000'), '155');
+  assert.equal(canonicalizeRecord(appointment({ doctoralia_id: '00155.0' })).doctoralia_id, '155');
+
   assert.equal(
-    buildStableAppointmentSourceKey(appointment({ doctoralia_id: ' 155 ' })),
-    'doctoralia_appt_v3:196db8882030fe73709aff62c43030545aeca7d0a9efbb6889f972bf7d76c786',
-  );
-  assert.equal(
-    patientIdentity(appointment({ doctoralia_id: null, phone_normalized: null, patient_phone: null, phone: null, patient_name: null, subject: '  .  PACIENTE   [600000000]  ' })),
-    'subject:. paciente [600000000]',
+    patientIdentity(appointment({
+      doctoralia_id: null,
+      phone_normalized: null,
+      patient_phone: null,
+      phone: null,
+      patient_name: null,
+      subject: '  .  REGISTRO HISTÓRICO [] (O/1. TEST [600000000] (REVISIÓN) )  ',
+    })),
+    'ph:600000000',
   );
 });
 
@@ -116,6 +128,10 @@ test('one writer, no destructive parser, no archive, selective financial cleanup
     'supabase/migrations/20260905193000_incremental_doctoralia_and_financial_boundary.sql',
     'utf8',
   );
+  const identityMigration = readFileSync(
+    'supabase/migrations/20260905193300_normalize_doctoralia_identity_equivalence.sql',
+    'utf8',
+  );
 
   assert.match(syncOwner, /syncIncrementalAppointments/);
   assert.doesNotMatch(syncOwner, /replaceMode\s*:\s*true/);
@@ -143,6 +159,11 @@ test('one writer, no destructive parser, no archive, selective financial cleanup
   assert.match(migration, /extensions\.digest/i);
   assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
+
+  assert.match(identityMigration, /doctoralia_id_raw ~ '\^\[0-9\]\+\(\[\.\]0\+\)\?\$'/);
+  assert.match(identityMigration, /subject_phone_normalized/);
+  assert.match(identityMigration, /source_key is distinct from r\.new_key/);
+  assert.match(identityMigration, /extensions\.digest/i);
 
   const appointmentShape = "and coalesce(template_name, '') ~ '^(O/)?[0-9]+[.] .*\\[.*\\]'";
   assert.ok(migration.includes(appointmentShape));
