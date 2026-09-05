@@ -18,6 +18,10 @@ const runtimeAcceptanceWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
   "utf8",
 );
+const provenanceQualifier = readFileSync(
+  fileURLToPath(new URL("../../../scripts/qualify-governed-edge-deployment.py", import.meta.url)),
+  "utf8",
+);
 const credentialMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260903000500_reconcile_credentials_user_service_unique_index.sql", import.meta.url)),
   "utf8",
@@ -180,7 +184,9 @@ describe("Google Ads provider health contract", () => {
 
     expect(runtimeAcceptanceWorkflow).toContain("workflows: ['Deploy Standalone Edge Functions']");
     expect(runtimeAcceptanceWorkflow).toContain("Prove governed Edge deployment actually ran");
-    expect(runtimeAcceptanceWorkflow).toContain("Deploy governed functions");
+    expect(provenanceQualifier).toContain('"Deploy governed functions"');
+    expect(provenanceQualifier).toContain('job.get("head_sha") != expected_sha');
+    expect(provenanceQualifier).toContain('job.get("run_id") != expected_run_id');
 
     expect(acceptanceJob).toContain("Verify current main is the deployed candidate");
     expect(acceptanceJob).toContain("Reverify remote main immediately before Google Ads acceptance");
