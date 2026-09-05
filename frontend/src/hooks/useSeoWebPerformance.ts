@@ -16,7 +16,7 @@ export type SeoWebPerformanceRow = {
   captured_at: string
 }
 
-export type SeoWebPerformanceState = 'loading' | 'fresh' | 'stale' | 'unavailable'
+export type SeoWebPerformanceState = 'loading' | 'fresh' | 'partial' | 'stale' | 'unavailable'
 
 const STALE_AFTER_MS = 48 * 60 * 60 * 1000
 
@@ -72,9 +72,12 @@ export function useSeoWebPerformance() {
     const usableRows = rows.filter((row) => row.quality_status !== 'unavailable')
     if (usableRows.length === 0) return 'unavailable'
 
-    const newestCapture = Math.max(...usableRows.map((row) => new Date(row.captured_at).getTime()).filter(Number.isFinite))
-    if (!Number.isFinite(newestCapture)) return 'unavailable'
-    return Date.now() - newestCapture > STALE_AFTER_MS ? 'stale' : 'fresh'
+    const timestamps = usableRows.map((row) => new Date(row.captured_at).getTime()).filter(Number.isFinite)
+    if (timestamps.length !== usableRows.length) return 'unavailable'
+    if (timestamps.some((capturedAt) => Date.now() - capturedAt > STALE_AFTER_MS)) return 'stale'
+
+    if (usableRows.length !== rows.length || usableRows.some((row) => row.quality_status === 'partial')) return 'partial'
+    return 'fresh'
   }, [error, loading, rows])
 
   return { rows, loading, error, state }
