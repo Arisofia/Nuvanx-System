@@ -37,14 +37,6 @@ describe('legacy v_lead_traceability retirement', () => {
     }
   });
 
-  it('closes the known inherited ACL before retirement', () => {
-    const revoke = executableSql.indexOf('REVOKE ALL PRIVILEGES ON TABLE public.v_lead_traceability');
-    const serviceRoleGrant = executableSql.indexOf('GRANT SELECT ON TABLE public.v_lead_traceability TO service_role;');
-    const drop = executableSql.indexOf('DROP VIEW public.v_lead_traceability;');
-    expect(revoke).toBeGreaterThan(-1);
-    expect(serviceRoleGrant).toBeGreaterThan(revoke);
-    expect(drop).toBeGreaterThan(serviceRoleGrant);
-  });
 
   it('fails closed if the legacy view gains a new dependent object', () => {
     expect(migration).toContain("d.classid = 'pg_rewrite'::regclass");

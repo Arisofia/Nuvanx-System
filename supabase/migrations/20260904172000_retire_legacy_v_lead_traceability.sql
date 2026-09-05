@@ -191,12 +191,9 @@ BEGIN
     RAISE EXCEPTION 'Canonical public.vw_lead_traceability security state is not accepted';
   END IF;
 
-  -- Close the known inherited exposure before the object is removed. Both ACL
-  -- change and DROP occur atomically in this migration transaction.
-  REVOKE ALL PRIVILEGES ON TABLE public.v_lead_traceability
-    FROM PUBLIC, anon, authenticated, service_role;
-  GRANT SELECT ON TABLE public.v_lead_traceability TO service_role;
-
+  -- Drop the audited legacy view. Removing the object atomically retires all of
+  -- its inherited privileges in the same transaction; an intermediate REVOKE
+  -- would have no observable effect. Intentionally no CASCADE.
   DROP VIEW public.v_lead_traceability;
 
   IF to_regclass('public.v_lead_traceability') IS NOT NULL THEN
