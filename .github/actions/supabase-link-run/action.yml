@@ -27,10 +27,13 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    # v2.102.0 regressed legacy machine-readable output by emitting spinner ANSI
-    # bytes to stdout. Keep the governed default on a stable release containing
-    # upstream fix supabase/cli#5410 so JSON inventory consumers stay strict.
-    default: '2.116.0'
+    # v2.108.0 is inside the verified compatibility window: it contains
+    # upstream fix supabase/cli#5410 for legacy machine-readable stdout, while
+    # predating supabase/cli#5671, which ported `migration list` to the Glamour
+    # renderer and changed its human-readable table cells to backtick-wrapped
+    # values. The governed Edge migration-parity gate consumes the pre-port text
+    # contract, so moving past this boundary requires migrating that gate first.
+    default: '2.108.0'
 
 outputs:
   resolved_db_password:

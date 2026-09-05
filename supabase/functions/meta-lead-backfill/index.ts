@@ -267,59 +267,70 @@ function mapLead(raw: MetaLead) {
   return { fullName, email, phone, isTest };
 }
 
-const LEAD_MATCH_FIELDS = "id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
+const LEAD_MATCH_FIELDS = "id,user_id,clinic_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
 
 type ExistingLeadResolution = {
   row: any | null;
   conflict: boolean;
 };
 
-async function fetchIdentityCandidate(admin: any, userId: string, column: "phone_normalized" | "email", value: string | null): Promise<ExistingLeadResolution> {
+function scopeOwner(query: any, userId: string, clinicId: string | null) {
+  let scoped = query.eq("user_id", userId);
+  scoped = clinicId ? scoped.eq("clinic_id", clinicId) : scoped.is("clinic_id", null);
+  return scoped;
+}
+
+async function fetchIdentityCandidate(
+  admin: any,
+  userId: string,
+  clinicId: string | null,
+  column: "phone_normalized" | "email",
+  value: string | null,
+): Promise<ExistingLeadResolution> {
   if (!value) return { row: null, conflict: false };
-  const { data, error } = await admin
-    .from("leads")
-    .select(LEAD_MATCH_FIELDS)
-    .eq("user_id", userId)
+  const query = scopeOwner(
+    admin.from("leads").select(LEAD_MATCH_FIELDS),
+    userId,
+    clinicId,
+  )
     .eq(column, value)
     .is("deleted_at", null)
     .limit(2);
+  const { data, error } = await query;
   if (error) throw error;
   const rows = Array.isArray(data) ? data : [];
   if (rows.length > 1) return { row: null, conflict: true };
   return { row: rows[0] ?? null, conflict: false };
 }
 
-async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null): Promise<ExistingLeadResolution> {
-  const { data: attr, error: attrError } = await admin
-    .from("meta_attribution")
-    .select("lead_id")
-    .eq("leadgen_id", leadgenId)
-    .maybeSingle();
-  if (attrError) throw attrError;
-  if (attr?.lead_id) {
-    const { data: row, error: rowError } = await admin
-      .from("leads")
-      .select(LEAD_MATCH_FIELDS)
-      .eq("id", attr.lead_id)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (rowError) throw rowError;
-    if (row) return String(row.user_id) === userId ? { row, conflict: false } : { row: null, conflict: true };
-  }
-
-  const { data: external, error: externalError } = await admin
-    .from("leads")
-    .select(LEAD_MATCH_FIELDS)
-    .eq("user_id", userId)
+async function findExistingLead(
+  admin: any,
+  userId: string,
+  clinicId: string | null,
+  leadgenId: string,
+  phone: string | null,
+  email: string | null,
+): Promise<ExistingLeadResolution> {
+  // Provider lead IDs are not globally unique tenancy keys. Resolve them on the
+  // durable lead owner (user + clinic), then use attribution only by lead_id.
+  const externalQuery = scopeOwner(
+    admin.from("leads").select(LEAD_MATCH_FIELDS),
+    userId,
+    clinicId,
+  )
+    .eq("source", "meta_leadgen")
     .eq("external_id", leadgenId)
     .is("deleted_at", null)
-    .maybeSingle();
+    .limit(2);
+  const { data: externalRows, error: externalError } = await externalQuery;
   if (externalError) throw externalError;
-  if (external) return { row: external, conflict: false };
+  const external = Array.isArray(externalRows) ? externalRows : [];
+  if (external.length > 1) return { row: null, conflict: true };
+  if (external[0]) return { row: external[0], conflict: false };
 
-  const phoneCandidate = await fetchIdentityCandidate(admin, userId, "phone_normalized", phoneLookupKey(phone));
+  const phoneCandidate = await fetchIdentityCandidate(admin, userId, clinicId, "phone_normalized", phoneLookupKey(phone));
   if (phoneCandidate.conflict) return phoneCandidate;
-  const emailCandidate = await fetchIdentityCandidate(admin, userId, "email", email);
+  const emailCandidate = await fetchIdentityCandidate(admin, userId, clinicId, "email", email);
   if (emailCandidate.conflict) return emailCandidate;
 
   if (phoneCandidate.row && emailCandidate.row && phoneCandidate.row.id !== emailCandidate.row.id) {
@@ -333,7 +344,8 @@ async function persistLead(admin: any, ctx: any, raw: MetaLead) {
   if (!leadgenId) return "invalid";
   const mapped = mapLead(raw);
   if (mapped.isTest) return "test";
-  const resolved = await findExistingLead(admin, ctx.userId, leadgenId, mapped.phone, mapped.email);
+  const clinicId = ctx.integration.clinic_id ? String(ctx.integration.clinic_id) : null;
+  const resolved = await findExistingLead(admin, ctx.userId, clinicId, leadgenId, mapped.phone, mapped.email);
   if (resolved.conflict) return "identity_conflict";
   const createdAt = raw.created_time && Number.isFinite(new Date(raw.created_time).getTime()) ? new Date(raw.created_time).toISOString() : new Date().toISOString();
   let leadId = resolved.row?.id ?? null;
@@ -355,12 +367,14 @@ async function persistLead(admin: any, ctx: any, raw: MetaLead) {
     const existing = resolved.row;
     const updates: Record<string, unknown> = { external_id: existing.external_id || leadgenId };
     for (const [key, value] of Object.entries(common)) if (!(existing as any)[key] && value) updates[key] = value;
-    const { error } = await admin.from("leads").update(updates).eq("id", leadId).eq("user_id", ctx.userId);
+    let updateQuery = admin.from("leads").update(updates).eq("id", leadId).eq("user_id", ctx.userId);
+    updateQuery = clinicId ? updateQuery.eq("clinic_id", clinicId) : updateQuery.is("clinic_id", null);
+    const { error } = await updateQuery;
     if (error) throw error;
   } else {
     const { data, error } = await admin.from("leads").insert({
       user_id: ctx.userId,
-      clinic_id: ctx.integration.clinic_id ?? null,
+      clinic_id: clinicId,
       external_id: leadgenId,
       source: "meta_leadgen",
       stage: "lead",
