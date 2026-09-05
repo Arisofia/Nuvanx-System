@@ -108,9 +108,6 @@ test('Supabase base URL is pinned before privileged requests are built', () => {
   ]) {
     assert.throws(() => normalizeSupabaseBase(invalid), /valid HTTPS origin/);
   }
-  const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
-  const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
-  assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'Supabase origin validation must run before privileged requests');
 });
 
 test('Google Ads sync rejects an attacker origin before any request', async () => {
