@@ -65,30 +65,48 @@ print_migration_failure_summary() {
   fi
 }
 
+# Single source of truth for CLI-output classification. Keep these in sync with
+# the Supabase CLI version pinned in .github/actions/supabase-link-run/action.yml.
+DETERMINISTIC_PATTERNS=(
+  'syntax error'
+  'permission denied'
+  'not a valid migration'
+  'SQLSTATE 42P01'
+  'could not find valid entry for job'
+  'relation .* does not exist'
+  'column .* does not exist'
+  'function .* does not exist'
+  'type .* does not exist'
+  'invalid input syntax'
+  'duplicate key'
+  'version.*already exists'
+  'checksum'
+  'failed to parse'
+  'error parsing'
+  'Remote migration versions not found in local migrations directory'
+  'Local migration versions not found in remote migration history'
+  'migration history.*out of sync'
+)
+
+TRANSIENT_PATTERNS=(
+  'failed to connect'
+  'connection reset'
+  'connection refused'
+  'connection timed out'
+  'timeout while'
+  'network is unreachable'
+  'hostname resolving error'
+  'temporary failure in name resolution'
+  'no such host'
+  '502 Bad Gateway'
+  '503 Service Unavailable'
+  '504 Gateway Timeout'
+  'unexpected EOF'
+)
+
 is_deterministic_migration_error() {
   local output="$1"
-  local -a patterns=(
-    'syntax error'
-    'permission denied'
-    'not a valid migration'
-    'SQLSTATE 42P01'
-    'could not find valid entry for job'
-    'relation .* does not exist'
-    'column .* does not exist'
-    'function .* does not exist'
-    'type .* does not exist'
-    'invalid input syntax'
-    'duplicate key'
-    'version.*already exists'
-    'checksum'
-    'failed to parse'
-    'error parsing'
-    'Remote migration versions not found in local migrations directory'
-    'Local migration versions not found in remote migration history'
-    'migration history.*out of sync'
-  )
-
-  for pattern in "${patterns[@]}"; do
+  for pattern in "${DETERMINISTIC_PATTERNS[@]}"; do
     if printf '%s\n' "$output" | grep -Eiq "$pattern"; then
       return 0
     fi
@@ -98,23 +116,7 @@ is_deterministic_migration_error() {
 
 is_transient_transport_error() {
   local output="$1"
-  local -a patterns=(
-    'failed to connect'
-    'connection reset'
-    'connection refused'
-    'connection timed out'
-    'timeout while'
-    'network is unreachable'
-    'hostname resolving error'
-    'temporary failure in name resolution'
-    'no such host'
-    '502 Bad Gateway'
-    '503 Service Unavailable'
-    '504 Gateway Timeout'
-    'unexpected EOF'
-  )
-
-  for pattern in "${patterns[@]}"; do
+  for pattern in "${TRANSIENT_PATTERNS[@]}"; do
     if printf '%s\n' "$output" | grep -Eiq "$pattern"; then
       return 0
     fi
