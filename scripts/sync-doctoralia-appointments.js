@@ -5,7 +5,9 @@
  * Incrementally syncs the canonical Doctoralia appointments agenda from Google
  * Sheets into public.doctoralia_appointments_ingestion.
  *
- * This is the sole operational Doctoralia appointment writer.
+ * This is the sole operational Doctoralia appointment writer. Its source is
+ * intrinsically pinned to Base Completa Doctoralia; environment configuration
+ * cannot redirect the governed sync to a derived tab.
  */
 
 const fs = require('node:fs');
@@ -139,12 +141,7 @@ async function fetchRows() {
 
 async function main() {
   if (SOURCE_DECISION.nonCanonicalIgnored) {
-    console.warn(
-      '[sync-doctoralia-appointments] Ignoring non-canonical configured sheet; governed sync is pinned to Base Completa Doctoralia. ' +
-        'Set DOCTORALIA_ALLOW_NON_CANONICAL_SHEET=true only for a controlled migration.',
-    );
-  } else if (SOURCE_DECISION.overrideAllowed && SOURCE_DECISION.resolved !== SOURCE_DECISION.canonical) {
-    console.warn('[sync-doctoralia-appointments] Controlled non-canonical appointments source override enabled.');
+    console.warn('[sync-doctoralia-appointments] Ignoring configured non-canonical sheet; governed sync is hard-pinned to Base Completa Doctoralia.');
   }
 
   let rows;
@@ -164,7 +161,7 @@ async function main() {
   console.table(totals);
 
   if (records.length < MIN_ROWS) {
-    throw new Error(`[sync-doctoralia-appointments] Parsed ${records.length} rows, below required minimum ${MIN_ROWS}. Check sheet name/range and export completeness.`);
+    throw new Error(`[sync-doctoralia-appointments] Parsed ${records.length} rows, below required minimum ${MIN_ROWS}. Check sheet range/export completeness.`);
   }
 
   if (DRY_RUN) {
