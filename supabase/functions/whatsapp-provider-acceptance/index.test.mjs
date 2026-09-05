@@ -8,6 +8,9 @@ const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260905173500_whatsapp_test_waba_acceptance.sql", import.meta.url)),
   "utf8",
 );
+const executableMigration = migration
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--.*$/gm, "");
 
 function ordered(sourceText, ...anchors) {
   let previous = -1;
@@ -47,15 +50,15 @@ describe("controlled Meta Test WABA acceptance boundary", () => {
   });
 
   it("stores only fingerprints and provider evidence outside clinical tables", () => {
-    expect(migration).toContain('public.whatsapp_provider_acceptance_runs');
-    expect(migration).toContain('recipient_sha256 text not null');
-    expect(migration).toContain('message_sha256 text not null');
-    expect(migration).toContain('provider_message_id text');
-    expect(migration).not.toContain('lead_id');
-    expect(migration).not.toContain('normalized_phone');
-    expect(migration).not.toContain('whatsapp_rate_limit_config');
-    expect(migration).not.toContain('lead_events');
-    expect(migration).not.toContain('whatsapp_conversations');
+    expect(executableMigration).toContain('public.whatsapp_provider_acceptance_runs');
+    expect(executableMigration).toContain('recipient_sha256 text not null');
+    expect(executableMigration).toContain('message_sha256 text not null');
+    expect(executableMigration).toContain('provider_message_id text');
+    expect(executableMigration).not.toContain('lead_id');
+    expect(executableMigration).not.toContain('normalized_phone');
+    expect(executableMigration).not.toContain('whatsapp_rate_limit_config');
+    expect(executableMigration).not.toContain('lead_events');
+    expect(executableMigration).not.toContain('whatsapp_conversations');
   });
 
   it("persists an irreversible sending state before contacting Meta", () => {
@@ -66,8 +69,8 @@ describe("controlled Meta Test WABA acceptance boundary", () => {
       'const outcome = await sendWhatsAppText',
       'rpc("nvx_finalize_whatsapp_provider_acceptance"',
     );
-    expect(migration).toContain("status = 'sending'");
-    expect(migration).toContain('provider_attempt_started_at');
+    expect(executableMigration).toContain("status = 'sending'");
+    expect(executableMigration).toContain('provider_attempt_started_at');
     expect(source).toContain('automatic resend is blocked');
   });
 
@@ -77,8 +80,8 @@ describe("controlled Meta Test WABA acceptance boundary", () => {
     expect(duplicate).toBeGreaterThan(-1);
     expect(providerCall).toBeGreaterThan(duplicate);
     expect(source.slice(duplicate, providerCall)).toContain('sent: false');
-    expect(migration).toContain("'duplicate'::text");
-    expect(migration).toContain('acceptance_idempotency_key_conflict');
+    expect(executableMigration).toContain("'duplicate'::text");
+    expect(executableMigration).toContain('acceptance_idempotency_key_conflict');
   });
 
   it("uses the exact shared provider transport used by the production worker", () => {
@@ -89,8 +92,8 @@ describe("controlled Meta Test WABA acceptance boundary", () => {
   });
 
   it("rate-limits acceptance independently of patient delivery", () => {
-    expect(migration).toContain("requested_at >= pg_catalog.clock_timestamp() - interval '1 hour'");
-    expect(migration).toContain('v_recent_count >= 3');
-    expect(migration).toContain('whatsapp_provider_acceptance_hourly_limit');
+    expect(executableMigration).toContain("requested_at >= pg_catalog.clock_timestamp() - interval '1 hour'");
+    expect(executableMigration).toContain('v_recent_count >= 3');
+    expect(executableMigration).toContain('whatsapp_provider_acceptance_hourly_limit');
   });
 });
