@@ -20,8 +20,9 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('echo "deploy=false" >> "$GITHUB_OUTPUT"');
   });
 
-  it('serializes against Manual Maintenance deploy_edge', () => {
+  it('uses the shared Production Edge mutation lock', () => {
     expect(workflow).toContain('group: manual-maintenance-deploy_edge');
+    expect(workflow).toContain('cancel-in-progress: false');
   });
 
   it('publishes a Cloudflare-only browser CORS boundary after Vercel retirement', () => {

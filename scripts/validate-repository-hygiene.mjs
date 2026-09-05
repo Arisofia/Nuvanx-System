@@ -16,14 +16,38 @@ const activeRoots = [
 ];
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.sql', '.yml', '.yaml', '.json']);
 const forbiddenName = /(?:_final|_old|_backup|_copy|\.bak$|\.tmp$|\.old$|~$)/i;
-// Assemble review-only sentinels from fragments so this detector never contains
-// the complete forbidden string it is searching for.
+// Assemble review-only and retired-contract sentinels from fragments so this
+// detector never contains the complete forbidden string it is searching for.
 const forbiddenContentMarkers = [
   ['touch:', 'force inclusion in PR diff'].join(' '),
   ['temporary', 'review-only marker'].join(' '),
+  ['EXPECTED_DOCTORALIA', 'COUNT'].join('_'),
 ];
 const forbiddenExactPaths = new Set([
   '.secret-webhook.example',
+  '.github/workflows/manual-maintenance.yml',
+  '.github/workflows/google-ads-auth-preflight.yml',
+  '.github/workflows/google-ads-credential-provision.yml',
+  '.github/workflows/google-ads-service-account-sync.yml',
+  '.github/workflows/update-wordpress-social-proof.yml',
+  'scripts/google-ads-auth-preflight.js',
+  'scripts/google-ads-auth-preflight.test.js',
+  'scripts/sync-google-ads-service-account.js',
+  'scripts/sync-google-ads-service-account.test.js',
+  'scripts/validate-retired-edge-inventory.mjs',
+  'scripts/social-proof/doctoralia-public-snapshot.mjs',
+  'wp-mu-plugins/nuvanx-doctoralia-price-barrio-salamanca.php',
+  'wp-mu-plugins/nuvanx-doctoralia-social-proof.php',
+  'wp-mu-plugins/nuvanx-google-review-request-v2.php',
+  'docs/social-proof/doctoralia-google-meta-activation-plan.md',
+  'docs/local-seo/google-business-profile-review-activation.md',
+]);
+const requiredProductionPaths = new Set([
+  '.github/workflows/deploy-standalone-edge-functions.yml',
+  '.github/workflows/google-ads-runtime-acceptance.yml',
+  'scripts/preflight-google-ads-runtime.js',
+  'scripts/provision-google-ads-developer-token.js',
+  'scripts/converge-google-ads-edge-auth.js',
 ]);
 
 const failures = [];
@@ -56,7 +80,7 @@ for (const file of files) {
   if (!sourceExtensions.has(extension)) continue;
   const content = await readFile(path.join(root, file), 'utf8');
   for (const marker of forbiddenContentMarkers) {
-    if (content.includes(marker)) failures.push(`temporary review marker in ${file}: ${marker}`);
+    if (content.includes(marker)) failures.push(`temporary or retired contract marker in ${file}: ${marker}`);
   }
 
   if (file.startsWith('supabase/functions/') && /https:\/\/[^\s'"`]+\.vercel\.app/i.test(content)) {
@@ -70,13 +94,16 @@ for (const file of files) {
 for (const forbiddenPath of forbiddenExactPaths) {
   if (existsSync(path.join(root, forbiddenPath))) failures.push(`redundant repository artifact present: ${forbiddenPath}`);
 }
+for (const requiredPath of requiredProductionPaths) {
+  if (!files.includes(requiredPath)) failures.push(`required Production owner missing: ${requiredPath}`);
+}
 
 const functionsRoot = path.join(root, 'supabase/functions');
 if (existsSync(functionsRoot)) {
   for (const entry of await readdir(functionsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === '_shared') continue;
-    const indexPath = path.join(functionsRoot, entry.name, 'index.ts');
-    if (!existsSync(indexPath)) failures.push(`orphan Edge Function directory without index.ts: supabase/functions/${entry.name}`);
+    const indexPath = `supabase/functions/${entry.name}/index.ts`;
+    if (!files.includes(indexPath)) failures.push(`orphan Edge Function directory without index.ts: supabase/functions/${entry.name}`);
   }
 }
 

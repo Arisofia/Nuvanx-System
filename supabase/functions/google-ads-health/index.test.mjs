@@ -18,14 +18,21 @@ const runtimeAcceptanceWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
   "utf8",
 );
-const credentialWorkflow = readFileSync(
-  fileURLToPath(new URL("../../../.github/workflows/google-ads-credential-provision.yml", import.meta.url)),
-  "utf8",
-);
 const credentialMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260903000500_reconcile_credentials_user_service_unique_index.sql", import.meta.url)),
   "utf8",
 );
+
+function jobBody(workflow, jobName) {
+  const marker = `\n  ${jobName}:\n`;
+  const start = workflow.indexOf(marker);
+  if (start < 0) return "";
+  const bodyStart = start + marker.length;
+  const nextJob = workflow.slice(bodyStart).search(/\n  [A-Za-z0-9_-]+:\n/);
+  return nextJob < 0
+    ? workflow.slice(bodyStart)
+    : workflow.slice(bodyStart, bodyStart + nextJob);
+}
 
 describe("Google Ads provider health contract", () => {
   it("uses a currently supported Google Ads API version and never v17", () => {
@@ -163,23 +170,29 @@ describe("Google Ads provider health contract", () => {
   });
 
   it("keeps state-driven credential convergence in the independent exact-SHA runtime acceptance domain", () => {
+    const acceptanceJob = jobBody(runtimeAcceptanceWorkflow, "acceptance");
+    expect(acceptanceJob).not.toBe("");
+
     expect(deployWorkflow).toContain("Reverify remote main immediately before Production mutation");
     expect(deployWorkflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(deployWorkflow).not.toContain("Converge Google Ads credential through deployed runtime");
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+
+    expect(runtimeAcceptanceWorkflow).toContain("workflows: ['Deploy Standalone Edge Functions']");
     expect(runtimeAcceptanceWorkflow).toContain("Prove governed Edge deployment actually ran");
     expect(runtimeAcceptanceWorkflow).toContain("Deploy governed functions");
-    expect(runtimeAcceptanceWorkflow).toContain("Verify current main is the deployed candidate");
-    expect(runtimeAcceptanceWorkflow).toContain("Reverify remote main immediately before Google Ads acceptance");
-    expect(runtimeAcceptanceWorkflow).toContain("Converge and accept Google Ads credential through deployed runtime");
-    expect(runtimeAcceptanceWorkflow).toContain("refusing stale Google Ads credential mutation");
-    expect(runtimeAcceptanceWorkflow).not.toContain("continue-on-error: true");
-    expect(runtimeAcceptanceWorkflow).not.toContain("git diff --name-only");
+
+    expect(acceptanceJob).toContain("Verify current main is the deployed candidate");
+    expect(acceptanceJob).toContain("Reverify remote main immediately before Google Ads acceptance");
+    expect(acceptanceJob).toContain("Converge and accept Google Ads credential through deployed runtime");
+    expect(acceptanceJob).toContain("GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}");
+    expect(acceptanceJob).toContain("name: Production");
+    expect(acceptanceJob).toContain("refusing stale Google Ads credential mutation");
+    expect(acceptanceJob).not.toContain("continue-on-error: true");
+    expect(acceptanceJob).not.toContain("git diff --name-only");
+
     expect(provisionScript).toContain("credentialContractCurrent(integrations, credentials)");
     expect(provisionScript).toContain("provision_required: false");
-    expect(credentialWorkflow).toContain("workflow_dispatch:");
-    expect(credentialWorkflow).not.toContain("push:");
-    expect(credentialWorkflow).not.toContain("ENCRYPTION_KEY");
   });
 
   it("keeps legacy service-account representation normalization covered", () => {
