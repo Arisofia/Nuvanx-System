@@ -82,28 +82,28 @@ describe('standalone Edge deployment ownership', () => {
 
   it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
-    expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905144500)');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905144500']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905141000', '20260905144500']) {
+      const ts = version === '20260905141000' ? '2026-09-05 14:10:00' : '2026-09-05 14:45:00';
       const asciiParity = migrationParityRow(version);
       const unicodeParity = migrationParityRow(version);
-      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-05 14:45:00`)).toBe(true);
-      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-05 14:45:00`)).toBe(true);
+      expect(asciiParity.test(`  ${version} | ${version} | ${ts}`)).toBe(true);
+      expect(unicodeParity.test(`  ${version} │ ${version} │ ${ts}`)).toBe(true);
 
       const localOnlyAscii = migrationParityRow(version);
       const remoteOnlyAscii = migrationParityRow(version);
       const localOnlyUnicode = migrationParityRow(version);
       const remoteOnlyUnicode = migrationParityRow(version);
-      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-05 14:45:00`)).toBe(false);
-      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-05 14:45:00`)).toBe(false);
-      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-05 14:45:00`)).toBe(false);
-      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-05 14:45:00`)).toBe(false);
+      expect(localOnlyAscii.test(`  ${version} |                | ${ts}`)).toBe(false);
+      expect(remoteOnlyAscii.test(`                 | ${version} | ${ts}`)).toBe(false);
+      expect(localOnlyUnicode.test(`  ${version} │                │ ${ts}`)).toBe(false);
+      expect(remoteOnlyUnicode.test(`                 │ ${version} │ ${ts}`)).toBe(false);
     }
   });
 
@@ -121,18 +121,25 @@ describe('standalone Edge deployment ownership', () => {
       'supabase/functions/dashboard/index.ts',
       'supabase/functions/agent-run/index.ts',
       'supabase/functions/runtime-bootstrap/index.ts',
+      'supabase/functions/control-centre-provider/index.ts',
       'supabase/functions/google-ads-auth-preflight/index.ts',
       'supabase/functions/google-ads-health/index.ts',
       'supabase/functions/google-ads-daily-sync/index.ts',
       'supabase/functions/google-ads-backfill-dispatcher/index.ts',
       'supabase/functions/meta-lead-backfill/index.ts',
       'supabase/functions/meta-daily-insights/index.ts',
+      'supabase/functions/meta-routing-audit/index.ts',
+      'supabase/functions/meta-leadgen-subscribe/index.ts',
+      'supabase/functions/meta-hubspot-sync/index.ts',
       'supabase/functions/meta-capi-dispatch/index.ts',
       'supabase/functions/hubspot-marketing-contact-monitor/index.ts',
       'supabase/functions/revops-dispatcher/index.ts',
       'supabase/functions/whatsapp-send/index.ts',
       'supabase/functions/whatsapp-outbound-worker/index.ts',
       'supabase/functions/whatsapp-status-webhook/index.ts',
+      'supabase/functions/google-click-attribution/index.ts',
+      'supabase/functions/google-data-manager-export/index.ts',
+      'supabase/functions/seo-web-performance/index.ts',
     ]) {
       const pathLine = new RegExp(`^\\s*${escapeRegex(path)}\\s*\\\\?\\s*$`);
       expect(block.some((line) => pathLine.test(line)), `${path} must be an executable Deno-check argument`).toBe(true);
@@ -145,6 +152,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy seo-web-performance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });
