@@ -11,6 +11,9 @@ const acceptanceMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260905173500_whatsapp_test_waba_acceptance.sql", import.meta.url)),
   "utf8",
 );
+const executableAcceptanceMigration = acceptanceMigration
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--.*$/gm, "");
 
 describe("WhatsApp delivery status webhook contract", () => {
   it("supports canonical and Test WABA verification without exposing verify tokens", () => {
@@ -73,13 +76,13 @@ describe("WhatsApp delivery status webhook contract", () => {
     expect(migration).not.toContain('whatsapp_conversations_wa_message_id_uidx');
   });
 
-  it("keeps Test WABA evidence outside lead and patient tables", () => {
-    expect(acceptanceMigration).toContain('create table if not exists public.whatsapp_provider_acceptance_runs');
-    expect(acceptanceMigration).toContain('recipient_sha256 text not null');
-    expect(acceptanceMigration).toContain('message_sha256 text not null');
-    expect(acceptanceMigration).not.toContain('lead_id');
-    expect(acceptanceMigration).not.toContain('normalized_phone');
-    expect(acceptanceMigration).not.toContain('whatsapp_rate_limit_config');
+  it("keeps Test WABA executable persistence outside lead and patient tables", () => {
+    expect(executableAcceptanceMigration).toContain('create table if not exists public.whatsapp_provider_acceptance_runs');
+    expect(executableAcceptanceMigration).toContain('recipient_sha256 text not null');
+    expect(executableAcceptanceMigration).toContain('message_sha256 text not null');
+    expect(executableAcceptanceMigration).not.toContain('lead_id');
+    expect(executableAcceptanceMigration).not.toContain('normalized_phone');
+    expect(executableAcceptanceMigration).not.toContain('whatsapp_rate_limit_config');
   });
 
   it("never regresses conversation delivery state when callbacks arrive out of order", () => {
