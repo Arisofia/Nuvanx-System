@@ -5,12 +5,11 @@ declare const Deno: any;
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim();
-const META_CANONICAL_APP_SECRET = (
-  Deno.env.get("META_CANONICAL_APP_SECRET") || Deno.env.get("META_REPORTING_APP_SECRET") || ""
-).trim();
+const META_CANONICAL_APP_SECRET = (Deno.env.get("META_CANONICAL_APP_SECRET") || "").trim();
 const META_GRAPH = "https://graph.facebook.com/v22.0";
 const CANONICAL_APP_ID = "1836302544001572";
 const CANONICAL_SYSTEM_USER_ID = "122098243371455164";
+const CANONICAL_PAGE_ID = "113908631183569";
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -29,6 +28,7 @@ function timingSafeTextMatch(received: string, expected: string): boolean {
 }
 
 function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2 !== 0) throw new Error("Malformed canonical Meta credential");
   const buffer = new ArrayBuffer(hex.length >>> 1);
   const out = new Uint8Array(buffer);
   for (let i = 0; i < hex.length; i += 2) out[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
@@ -48,6 +48,9 @@ async function decryptCred(encoded: string): Promise<string> {
   const iv = hexToBytes(ivH);
   const tag = hexToBytes(tagH);
   const ct = hexToBytes(ctH);
+  if (salt.length === 0 || iv.length !== 12 || tag.length !== 16 || ct.length === 0) {
+    throw new Error("Malformed canonical Meta credential");
+  }
   const combinedBuffer = new ArrayBuffer(ct.length + tag.length);
   const combined = new Uint8Array(combinedBuffer);
   combined.set(ct);
@@ -86,16 +89,20 @@ async function computeAppsecretProof(accessToken: string): Promise<string> {
 }
 
 async function fetchJson(url: URL) {
-  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(20000) });
+  const response = await fetch(url.toString(), {
+    redirect: "error",
+    signal: AbortSignal.timeout(20000),
+  });
   const text = await response.text();
   let body: any = {};
   try {
     body = text ? JSON.parse(text) : {};
   } catch {
-    body = { message: text.slice(0, 300) };
+    body = {};
   }
   if (!response.ok) {
-    throw new Error(String(body?.error?.message || body?.message || `Meta API ${response.status}`));
+    const providerCode = body?.error?.code ? ` code=${String(body.error.code)}` : "";
+    throw new Error(`Meta API request failed status=${response.status}${providerCode}`);
   }
   return body;
 }
@@ -117,17 +124,25 @@ async function resolveCanonicalMeta(admin: any) {
   const appId = String(integration.metadata?.appId ?? integration.metadata?.app_id ?? "").trim();
   const systemUserId = String(integration.metadata?.systemUserId ?? integration.metadata?.system_user_id ?? "").trim();
   const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
-  if (!userId || appId !== CANONICAL_APP_ID || systemUserId !== CANONICAL_SYSTEM_USER_ID || !/^\d+$/.test(pageId)) {
+  if (
+    !userId ||
+    appId !== CANONICAL_APP_ID ||
+    systemUserId !== CANONICAL_SYSTEM_USER_ID ||
+    pageId !== CANONICAL_PAGE_ID
+  ) {
     throw new Error("Canonical Meta routing identity mismatch");
   }
 
-  const { data: credential, error: credentialError } = await admin
+  const { data: credentials, error: credentialError } = await admin
     .from("credentials")
     .select("id,encrypted_key")
     .eq("user_id", userId)
-    .eq("service", "meta_ads")
-    .maybeSingle();
-  if (credentialError || !credential?.encrypted_key) throw new Error("Canonical Meta credential missing");
+    .eq("service", "meta_ads");
+  if (credentialError) throw credentialError;
+  if (!Array.isArray(credentials) || credentials.length !== 1 || !credentials[0]?.encrypted_key) {
+    throw new Error("Expected exactly one canonical Meta credential");
+  }
+  const credential = credentials[0];
   const managementToken = await decryptCred(String(credential.encrypted_key));
   if (!managementToken) throw new Error("Canonical Meta credential is empty");
   return { credentialId: credential.id, appId, systemUserId, pageId, managementToken };
@@ -139,7 +154,9 @@ Deno.serve(async (req: Request) => {
     return reply(500, { success: false, message: "Server configuration error" });
   }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
   try {
     const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "");
     const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
@@ -192,7 +209,7 @@ Deno.serve(async (req: Request) => {
       required_scopes: ["leads_retrieval", "pages_show_list"],
     });
   } catch (error: any) {
-    console.error("[meta-runtime-credential-acceptance] error", String(error?.message || error).slice(0, 240));
-    return reply(502, { success: false, message: String(error?.message || "Meta credential acceptance failed").slice(0, 240) });
+    console.error("[meta-runtime-credential-acceptance] failure", String(error?.message || error).slice(0, 240));
+    return reply(502, { success: false, message: "Meta credential acceptance failed" });
   }
 });
