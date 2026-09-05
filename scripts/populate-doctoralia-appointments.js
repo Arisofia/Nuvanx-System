@@ -2,47 +2,22 @@
 'use strict';
 
 /**
- * Loads Doctoralia appointment exports from a local CSV or Excel workbook into
- * public.doctoralia_appointments_ingestion.
+ * Read-only parser for Doctoralia appointment exports.
  *
- * Daily sync rules:
- *   - Doctoralia ID is a patient/client code, NOT an appointment identifier.
- *   - source_key and appointment_id must be appointment-level keys so repeated
- *     visits for the same Doctoralia patient are preserved.
- *   - Operational views classify visits as:
- *       1ra cita   = first real appointment for the patient
- *       nuevo      = second real appointment for the patient
- *       recurrente = third and later real appointments
- *       churn_90d  = no later appointment within 90 days of a month-end visit
- *   - Revisión/Revisión tratamiento is a real appointment type and must not be
- *     treated as an internal control by default.
- *
- * Required env vars (.env.local is loaded automatically):
- *   SUPABASE_URL or VITE_SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
- *
- * Optional env vars:
- *   DOCTORALIA_APPOINTMENTS_INPUT_PATH (default: ./doctoralia_appointments.csv when present, otherwise ./Base Pacientes Nuvanx.xlsx)
- *   DOCTORALIA_APPOINTMENTS_XLSX_PATH (legacy alias for Excel-only runs)
- *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Base Completa Doctoralia; Excel only)
- *   DOCTORALIA_APPOINTMENTS_CHUNK_SIZE (default: 500)
- *   DOCTORALIA_APPOINTMENTS_REPLACE_MODE (default: true; replace table contents before load)
- *
- * Flags:
- *   --dry-run  Parse and summarize the input file without writing to Supabase.
+ * This module intentionally has no Supabase client and no persistence path.
+ * Production writes belong exclusively to scripts/sync-doctoralia-appointments.js,
+ * which canonicalizes appointment identity and applies incremental deltas.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const XlsxPopulate = require('xlsx-populate');
-const { createClient } = require('@supabase/supabase-js');
 
 require('dotenv').config({ path: '.env.local' });
 
 const DEFAULT_CSV = 'doctoralia_appointments.csv';
 const DEFAULT_WORKBOOK = 'Base Pacientes Nuvanx.xlsx';
 const DEFAULT_SHEET = 'Base Completa Doctoralia';
-const DEFAULT_CHUNK_SIZE = 100;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const INPUT_PATH = path.resolve(
@@ -54,11 +29,6 @@ const INPUT_PATH = path.resolve(
 );
 const INPUT_EXT = path.extname(INPUT_PATH).toLowerCase();
 const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || DEFAULT_SHEET;
-const CHUNK_SIZE = parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_CHUNK_SIZE, DEFAULT_CHUNK_SIZE);
-const REPLACE_MODE = String(process.env.DOCTORALIA_APPOINTMENTS_REPLACE_MODE || 'true').toLowerCase() !== 'false';
-
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
 
 const HEADER_ALIASES = {
   estado: ['estado', 'status'],
@@ -85,12 +55,7 @@ const HEADER_ALIASES = {
   clinic: ['clinica', 'clínica', 'clinic'],
 };
 
-const REQUIRED_HEADERS = [
-  'estado',
-  'appointment_date',
-  'doctoralia_id',
-  'patient_name',
-];
+const REQUIRED_HEADERS = ['estado', 'appointment_date', 'doctoralia_id', 'patient_name'];
 
 function normalizeHeader(value) {
   return String(value || '')
@@ -105,11 +70,6 @@ function clean(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
   return text || null;
-}
-
-function parsePositiveInt(value, fallback) {
-  const parsed = Number.parseInt(String(value || ''), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function dateFromExcelSerial(value) {
@@ -139,7 +99,6 @@ function parseAmount(value) {
   if (typeof value === 'number') return Math.round(value * 100) / 100;
 
   let text = String(value).replace(/[€$\s\u00A0]/g, '');
-
   if (text.includes(',') && text.includes('.')) {
     text = text.lastIndexOf(',') > text.lastIndexOf('.')
       ? text.replaceAll('.', '').replaceAll(',', '.')
@@ -188,7 +147,6 @@ function buildHeaderMap(headerRow) {
     const partialIndex = exactIndex >= 0
       ? exactIndex
       : normalizedHeaders.findIndex((header) => normalizedAliases.some((alias) => header.includes(alias) || alias.includes(header)));
-
     if (partialIndex >= 0) headerMap[field] = partialIndex;
   }
 
@@ -209,48 +167,11 @@ function ensureRequiredHeaders(headerMap) {
 
 function findHeaderRowIndex(rows) {
   if (!Array.isArray(rows)) return -1;
-
   return rows.findIndex((row) => {
     if (!Array.isArray(row)) return false;
     const headerMap = buildHeaderMap(row);
     return REQUIRED_HEADERS.every((field) => headerMap[field] !== undefined);
   });
-}
-
-function recordsFromRows(rows) {
-  if (!rows || rows.length < 2) return [];
-
-  const headerRowIndex = findHeaderRowIndex(rows);
-  if (headerRowIndex < 0) {
-    throw new Error('Missing Doctoralia header row');
-  }
-
-  const headerMap = buildHeaderMap(rows[headerRowIndex]);
-  ensureRequiredHeaders(headerMap);
-
-  const records = rows
-    .slice(headerRowIndex + 1)
-    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + headerRowIndex + 2)))
-    .filter(Boolean);
-
-  const sourceKeyCount = new Map();
-  for (const record of records) {
-    sourceKeyCount.set(record.source_key, (sourceKeyCount.get(record.source_key) || 0) + 1);
-  }
-
-  const duplicates = Array.from(sourceKeyCount.entries())
-    .filter(([, count]) => count > 1)
-    .map(([key, count]) => ({ key, count }));
-
-  if (duplicates.length > 0) {
-    console.warn(
-      `[doctoralia-appointments] Found ${duplicates.length} duplicate source_keys. ` +
-        `These will be deduplicated during upsert (keeping latest). ` +
-        `Sample: ${JSON.stringify(duplicates.slice(0, 5))}`,
-    );
-  }
-
-  return records;
 }
 
 function isBlankRow(row) {
@@ -266,7 +187,6 @@ function parseCsv(content) {
   for (let index = 0; index < content.length; index += 1) {
     const char = content[index];
     const next = content[index + 1];
-
     if (char === '"') {
       if (inQuotes && next === '"') {
         cell += '"';
@@ -292,10 +212,11 @@ function parseCsv(content) {
     row.push(cell);
     if (!isBlankRow(row)) rows.push(row);
   }
-
   return rows;
 }
 
+// Parser-local lineage key only. It is never the persisted appointment identity;
+// sync-doctoralia-appointments canonicalizes every record to doctoralia_appt_v3.
 function buildAppointmentSourceKey({ sheetRow, appointmentDate, appointmentTime, doctoraliaId, phone, treatment }) {
   return [
     'base_pacientes_doctoralia',
@@ -317,18 +238,12 @@ function buildRecord(row, headerMap, sheetRow) {
   const appointmentTime = clean(getCell(row, headerMap, 'appointment_time'));
   const patientName = clean(getCell(row, headerMap, 'patient_name'));
   const phone = clean(getCell(row, headerMap, 'phone'));
-  const sourceKey = buildAppointmentSourceKey({
-    sheetRow,
-    appointmentDate,
-    appointmentTime,
-    doctoraliaId,
-    phone,
-    treatment,
-  });
+  const sourceKey = buildAppointmentSourceKey({ sheetRow, appointmentDate, appointmentTime, doctoraliaId, phone, treatment });
   const controlText = `${patientName || ''} ${clean(getCell(row, headerMap, 'subject')) || ''} ${treatment || ''}`;
 
   return {
     source_key: sourceKey,
+    appointment_id: sourceKey,
     sheet_row: sheetRow,
     estado,
     status: estado,
@@ -344,7 +259,6 @@ function buildRecord(row, headerMap, sheetRow) {
     amount: parseAmount(getCell(row, headerMap, 'amount')),
     normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')) || appointmentDate,
     doctoralia_id: doctoraliaId,
-    appointment_id: sourceKey,
     patient_name: patientName,
     patient_email: clean(getCell(row, headerMap, 'patient_email')),
     phone,
@@ -358,9 +272,7 @@ function buildRecord(row, headerMap, sheetRow) {
     year_num: parseIntOrNull(getCell(row, headerMap, 'year_num')),
     clinic: (() => {
       const explicit = clean(getCell(row, headerMap, 'clinic'));
-      if (explicit && (explicit.includes('Chamber') || explicit.includes('Goya') || explicit.includes('Salamanca'))) {
-        return explicit;
-      }
+      if (explicit && (explicit.includes('Chamber') || explicit.includes('Goya') || explicit.includes('Salamanca'))) return explicit;
       const isChamberi = hasAny(agenda, ['JJRT', 'MEDICINA EST', 'ENFERMER', 'DERMOCOSM']);
       return isChamberi ? 'Centro Clínico NUVANX Chamberí' : 'Centro Clínico NUVANX Salamanca–Goya';
     })(),
@@ -379,6 +291,18 @@ function buildRecord(row, headerMap, sheetRow) {
   };
 }
 
+function recordsFromRows(rows) {
+  if (!rows || rows.length < 2) return [];
+  const headerRowIndex = findHeaderRowIndex(rows);
+  if (headerRowIndex < 0) throw new Error('Missing Doctoralia header row');
+  const headerMap = buildHeaderMap(rows[headerRowIndex]);
+  ensureRequiredHeaders(headerMap);
+  return rows
+    .slice(headerRowIndex + 1)
+    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + headerRowIndex + 2)))
+    .filter(Boolean);
+}
+
 function summarize(records) {
   return {
     total: records.length,
@@ -395,167 +319,49 @@ function validateRecordsForUpsert(records) {
   const invalid = records
     .map((record, index) => ({ record, index }))
     .filter(({ record }) => !record.source_key || !Number.isInteger(record.sheet_row) || !record.appointment_id);
-
   if (invalid.length > 0) {
-    const sample = invalid.slice(0, 5).map(({ record, index }) => ({
-      index,
-      sheet_row: record.sheet_row,
-      source_key: record.source_key,
-      appointment_id: record.appointment_id,
-      doctoralia_id: record.doctoralia_id,
-      patient_name: record.patient_name,
-    }));
-    throw new Error(`Invalid Doctoralia appointment records before upsert: every row must include source_key, appointment_id and integer sheet_row. Sample: ${JSON.stringify(sample)}`);
+    throw new Error('Invalid Doctoralia appointment records before upsert: every row must include source_key, appointment_id and integer sheet_row.');
   }
 }
 
+function dedupeRecordsBySourceKey(records) {
+  validateRecordsForUpsert(records);
+  const dedupedMap = new Map();
+  for (const record of records) dedupedMap.set(record.source_key, record);
+  return Array.from(dedupedMap.values());
+}
+
 async function readRowsFromCsv() {
-  const content = fs.readFileSync(INPUT_PATH, 'utf8').replace(/^\uFEFF/, '');
-  return parseCsv(content);
+  return parseCsv(fs.readFileSync(INPUT_PATH, 'utf8').replace(/^\uFEFF/, ''));
 }
 
 async function readRowsFromWorkbook() {
   const workbook = await XlsxPopulate.fromFileAsync(INPUT_PATH);
   const sheet = workbook.sheet(SHEET_NAME);
   if (!sheet) throw new Error(`Sheet not found: ${SHEET_NAME}`);
-
   const usedRange = sheet.usedRange();
-  if (!usedRange) return [];
-
-  return usedRange.value() || [];
+  return usedRange ? (usedRange.value() || []) : [];
 }
 
 async function readRecords() {
-  if (!fs.existsSync(INPUT_PATH)) {
-    throw new Error(`Doctoralia appointments input not found: ${INPUT_PATH}`);
-  }
-
-  const rows = INPUT_EXT === '.csv'
-    ? await readRowsFromCsv()
-    : await readRowsFromWorkbook();
-
+  if (!fs.existsSync(INPUT_PATH)) throw new Error(`Doctoralia appointments input not found: ${INPUT_PATH}`);
+  const rows = INPUT_EXT === '.csv' ? await readRowsFromCsv() : await readRowsFromWorkbook();
   return recordsFromRows(rows);
 }
 
-function getSupabaseClient() {
-  if (!SUPABASE_URL || !SERVICE_ROLE) {
-    throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY in .env.local');
-  }
-
-  return createClient(SUPABASE_URL, SERVICE_ROLE, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
-async function countIngestedRecords() {
-  const supabase = getSupabaseClient();
-  const { count, error } = await supabase
-    .from('doctoralia_appointments_ingestion')
-    .select('source_key', { count: 'exact', head: true });
-
-  if (error) throw error;
-  return count || 0;
-}
-
-function dedupeRecordsBySourceKey(records) {
-  validateRecordsForUpsert(records);
-
-  const dedupedMap = new Map();
-
-  for (const record of records) {
-    dedupedMap.set(record.source_key, record);
-  }
-
-  return Array.from(dedupedMap.values());
-}
-
-async function replaceIngestionTable(supabase) {
-  const { error } = await supabase
-    .from('doctoralia_appointments_ingestion')
-    .delete()
-    .gte('sheet_row', 0);
-
-  if (error) throw new Error(`[doctoralia-appointments] Failed to replace existing ingestion rows: ${error.message}`);
-  console.log('[doctoralia-appointments] Existing ingestion rows cleared before full replacement load.');
-}
-
-async function upsertRecords(records, options = {}) {
-  const supabase = getSupabaseClient();
-
-  const dedupedRecords = dedupeRecordsBySourceKey(records);
-
-  console.log(
-    `[doctoralia-appointments] Deduped records by appointment-level source_key: ` +
-      `${records.length} → ${dedupedRecords.length}`,
-  );
-
-  if (options.replaceMode ?? REPLACE_MODE) {
-    await replaceIngestionTable(supabase);
-  }
-
-  for (let index = 0; index < dedupedRecords.length; index += CHUNK_SIZE) {
-    const chunk = dedupedRecords.slice(index, index + CHUNK_SIZE);
-
-    const { error } = await supabase
-      .from('doctoralia_appointments_ingestion')
-      .upsert(chunk, { onConflict: 'source_key' });
-
-    if (error) {
-      const firstSheetRow = chunk[0]?.sheet_row;
-      const lastSheetRow = chunk[chunk.length - 1]?.sheet_row;
-
-      console.error('[doctoralia-appointments] Failed to upsert chunk', {
-        error,
-        index,
-        chunkSize: chunk.length,
-        startOffset: index,
-        endOffset: index + chunk.length - 1,
-        firstSheetRow,
-        lastSheetRow,
-      });
-
-      const wrappedError = new Error(
-        `[doctoralia-appointments] Failed to upsert chunk ` +
-          `(index=${index}, size=${chunk.length}, ` +
-          `first_sheet_row=${firstSheetRow}, last_sheet_row=${lastSheetRow}): ` +
-          error.message,
-      );
-
-      wrappedError.cause = error;
-      throw wrappedError;
-    }
-
-    console.log(
-      `[doctoralia-appointments] Upserted ${index + chunk.length}/${dedupedRecords.length} ` +
-        `(chunkSize=${chunk.length})`,
-    );
-  }
-}
-
 async function main() {
-  const records = await readRecords();
-  const totals = summarize(records);
-
-  console.log(
-    `[doctoralia-appointments] Parsed ${records.length} rows from input file ` +
-      `(type=${INPUT_EXT || 'unknown'}${SHEET_NAME ? ', with sheet' : ''}).`,
-  );
-  console.table(totals);
-
-  if (DRY_RUN) {
-    console.log('[doctoralia-appointments] Dry run completed; no rows were written.');
-    return;
+  if (!DRY_RUN) {
+    throw new Error('Direct Doctoralia parser writes are disabled. Use scripts/sync-doctoralia-appointments.js for canonical incremental persistence.');
   }
-
-  await upsertRecords(records);
-  const tableCount = await countIngestedRecords();
-  console.log(`[doctoralia-appointments] Load completed. Table now has ${tableCount} rows.`);
+  const records = await readRecords();
+  console.log(`[doctoralia-appointments] Parsed ${records.length} rows from input file (read-only).`);
+  console.table(summarize(records));
+  console.log('[doctoralia-appointments] Dry run completed; no rows were written.');
 }
 
 if (require.main === module) {
-  main().catch(() => {
-    console.error('[doctoralia-appointments] Load failed.');
-    console.error('[doctoralia-appointments] An internal error occurred.');
+  main().catch((error) => {
+    console.error('[doctoralia-appointments] Fatal error:', error.message);
     process.exit(1);
   });
 }
@@ -565,14 +371,10 @@ module.exports = {
   buildHeaderMap,
   parseCsv,
   buildRecord,
-  countIngestedRecords,
   dedupeRecordsBySourceKey,
   ensureRequiredHeaders,
-  getSupabaseClient,
   recordsFromRows,
   readRecords,
-  replaceIngestionTable,
-  upsertRecords,
   validateRecordsForUpsert,
   clean,
   hasAny,
