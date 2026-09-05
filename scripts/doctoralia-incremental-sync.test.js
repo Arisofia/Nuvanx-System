@@ -107,15 +107,11 @@ test('stable identity uses SHA-256 and contains no weak MD5 path', () => {
   assert.doesNotMatch(incrementalSource, /createHash\(['"]md5['"]\)/i);
 });
 
-test('there is one operational writer, no destructive parser path, and exact audit evidence before financial cleanup', () => {
+test('one writer, no destructive parser, no archive, selective financial cleanup', () => {
   const syncOwner = readFileSync('scripts/sync-doctoralia-appointments.js', 'utf8');
   const parser = readFileSync('scripts/populate-doctoralia-appointments.js', 'utf8');
   const dailyOwner = readFileSync('scripts/run-daily-sync.js', 'utf8');
   const packageJson = readFileSync('package.json', 'utf8');
-  const evidenceMigration = readFileSync(
-    'supabase/migrations/20260905192900_preserve_legacy_doctoralia_financial_evidence.sql',
-    'utf8',
-  );
   const migration = readFileSync(
     'supabase/migrations/20260905193000_incremental_doctoralia_and_financial_boundary.sql',
     'utf8',
@@ -137,12 +133,9 @@ test('there is one operational writer, no destructive parser path, and exact aud
   assert.doesNotMatch(packageJson, /sync-doctoralia\.test\.js/);
   assert.doesNotMatch(packageJson, /DOCTORALIA_APPOINTMENTS_REPLACE_MODE=true/);
 
-  assert.equal(existsSync('supabase/migrations/20260905192900_preserve_legacy_doctoralia_financial_evidence.sql'), true);
-  assert.equal(existsSync('supabase/tests/doctoralia-financial-evidence-contract.test.mjs'), true);
-  assert.match(evidenceMigration, /source_snapshot jsonb not null/i);
-  assert.match(evidenceMigration, /appointment_value_unverified/i);
-  assert.match(evidenceMigration, /before delete on public\.financial_settlements/i);
-  assert.match(evidenceMigration, /source_snapshot = to_jsonb\(old\)/i);
+  assert.equal(existsSync('supabase/migrations/20260905192900_preserve_legacy_doctoralia_financial_evidence.sql'), false);
+  assert.equal(existsSync('supabase/tests/doctoralia-financial-evidence-contract.test.mjs'), false);
+  assert.doesNotMatch(migration, /doctoralia_financial_materialization_evidence/i);
 
   assert.match(migration, /drop constraint if exists doctoralia_appointments_ingestion_sheet_row_key/i);
   assert.match(migration, /trg_guard_doctoralia_appointment_delete/i);
@@ -150,4 +143,12 @@ test('there is one operational writer, no destructive parser path, and exact aud
   assert.match(migration, /extensions\.digest/i);
   assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
+
+  // The cleanup must be scoped to the retired appointment Asunto shape, not all
+  // source_system='doctoralia' financial rows.
+  assert.match(migration, /coalesce\(template_name, ''\) ~ '\^\(O\/\)\?\[0-9\]\+\[\.\] \.*\\\[\.\*\\\]'/);
+  assert.doesNotMatch(
+    migration,
+    /delete from public\.financial_settlements\s+where pg_catalog\.lower\(pg_catalog\.btrim\(coalesce\(source_system, ''\)\)\) = 'doctoralia';/i,
+  );
 });
