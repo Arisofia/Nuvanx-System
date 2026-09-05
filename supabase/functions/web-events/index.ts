@@ -119,7 +119,15 @@ function normalizeDigits(raw: unknown): string {
   return String(raw || "").replaceAll(/\D/g, "");
 }
 
-async function resolveOwnerAndMeta(admin: any) {
+function sanitizeClinicId(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)) {
+    throw new RequestValidationError("Valid clinic_id is required");
+  }
+  return value;
+}
+
+async function resolveOwnerAndMeta(admin: any, clinicId: string) {
   let userId = "";
   if (DEFAULT_LANDING_USER_EMAIL) {
     const { data: userByEmail } = await admin.from("users").select("id").eq("email", DEFAULT_LANDING_USER_EMAIL).maybeSingle();
@@ -137,15 +145,17 @@ async function resolveOwnerAndMeta(admin: any) {
   if (userId) {
     const { data } = await admin
       .from("integrations")
-      .select("user_id,service,metadata,status,updated_at")
+      .select("user_id,clinic_id,service,metadata,status,updated_at")
       .eq("user_id", userId)
+      .eq("clinic_id", clinicId)
       .in("service", ["meta_ads", "meta"])
       .eq("status", "connected");
     rows = data || [];
   } else {
     const { data } = await admin
       .from("integrations")
-      .select("user_id,service,metadata,status,updated_at")
+      .select("user_id,clinic_id,service,metadata,status,updated_at")
+      .eq("clinic_id", clinicId)
       .in("service", ["meta_ads", "meta"])
       .eq("status", "connected")
       .order("updated_at", { ascending: false })
@@ -157,7 +167,7 @@ async function resolveOwnerAndMeta(admin: any) {
     scoreIntegration(b) - scoreIntegration(a) || String(b?.updated_at || "").localeCompare(String(a?.updated_at || ""))
   )[0];
 
-  if (!integration) throw new Error("Connected Meta integration not found");
+  if (!integration) throw new Error("Connected Meta integration not found for clinic");
   userId = integration.user_id || userId;
   if (!userId) throw new Error("No Meta owner user resolved");
 
@@ -166,9 +176,10 @@ async function resolveOwnerAndMeta(admin: any) {
     .from("credentials")
     .select("encrypted_key")
     .eq("user_id", userId)
+    .eq("clinic_id", clinicId)
     .eq("service", service)
     .maybeSingle();
-  if (!cred?.encrypted_key) throw new Error("Meta credential not found");
+  if (!cred?.encrypted_key) throw new Error("Meta credential not found for clinic");
 
   const metadata = integration.metadata || {};
   const pixelId = normalizeDigits(metadata.pixelId || metadata.pixel_id || META_PIXEL_ID);
@@ -297,8 +308,9 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, suppressed: true, reason: "qa_lead" }, 200);
     }
 
+    const clinicId = sanitizeClinicId(body.clinic_id || body.clinicId);
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-    const meta = await resolveOwnerAndMeta(admin);
+    const meta = await resolveOwnerAndMeta(admin, clinicId);
     const result = await sendMetaCapi({ pixelId: meta.pixelId, accessToken: meta.accessToken, appSecret: meta.appSecret, body, req });
     return json({ success: true, eventName: result.eventName, eventId: result.eventId }, 200);
   } catch (error: any) {

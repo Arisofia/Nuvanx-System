@@ -44,7 +44,11 @@ describe("Meta CAPI durable dispatch contract", () => {
     expect(eligibilityMigration).toContain("before insert or update of lead_id, event_name, event_id");
   });
 
-  it("calls only the canonical internal web-events bridge", () => {
+  it("passes the authoritative lead clinic tenant to the internal web-events bridge", () => {
+    expect(source).toContain('select("id,nvx_lead_id,clinic_id,hubspot_contact_id');
+    expect(source).toContain('if (!lead.clinic_id)');
+    expect(source).toContain('"Outbox lead missing clinic_id for CAPI tenant resolution"');
+    expect(source).toContain('clinic_id: String(lead.clinic_id)');
     expect(source).toContain('fetch(`${SUPABASE_URL}/functions/v1/web-events`');
     expect(source).toContain('event_name: "Lead"');
     expect(source).toContain("event_id: String(row.event_id || \"\")");
