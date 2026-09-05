@@ -26,6 +26,9 @@ describe('daily-aggregates Meta ingest contract', () => {
     expect(source).toContain("kind: 'provider_error'");
     expect(source).toContain('if (result.failures.length > 0)');
     expect(source).toContain('success: false');
+    expect(source).toContain("throw new Error('Meta API returned an invalid insights payload')");
+    expect(source).toContain("throw new Error('Meta API returned an invalid insights row')");
+    expect(source).toContain('AbortSignal.timeout(META_FETCH_TIMEOUT_MS)');
   });
 
   it('does not run a second insight writer or Gemini path inside ingestion', () => {

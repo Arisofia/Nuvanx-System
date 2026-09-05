@@ -44,6 +44,8 @@ type DailyAggregatesRequest = MetaDateRangeInput & {
   action?: string
 }
 
+const META_FETCH_TIMEOUT_MS = 30_000
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -75,9 +77,15 @@ function normalizeMetaInsightRow(value: unknown): MetaInsightRow | null {
 }
 
 function normalizeMetaInsightsResponse(value: unknown): MetaInsightsResponse {
-  if (!isRecord(value) || !Array.isArray(value.data)) return { data: [] }
+  if (!isRecord(value) || !Array.isArray(value.data)) {
+    throw new Error('Meta API returned an invalid insights payload')
+  }
+  const rows = value.data.map(normalizeMetaInsightRow)
+  if (rows.some((row) => row === null)) {
+    throw new Error('Meta API returned an invalid insights row')
+  }
   return {
-    data: value.data.map(normalizeMetaInsightRow).filter((row): row is MetaInsightRow => row !== null),
+    data: rows.filter((row): row is MetaInsightRow => row !== null),
   }
 }
 
@@ -184,7 +192,7 @@ async function metaFetch(
   if (appSecret) {
     url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret))
   }
-  const r = await fetch(url.toString())
+  const r = await fetch(url.toString(), { signal: AbortSignal.timeout(META_FETCH_TIMEOUT_MS) })
   const payload: unknown = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(externalErrorMessage(payload) || `Meta API ${r.status}`)
   return normalizeMetaInsightsResponse(payload)
