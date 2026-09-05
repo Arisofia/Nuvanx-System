@@ -76,7 +76,7 @@ test('latest source snapshot wins before persistence', () => {
   assert.equal(canonical.length, 1);
   assert.equal(canonical[0].sheet_row, 11);
   assert.equal(canonical[0].estado, 'Anulada');
-  assert.match(canonical[0].source_key, /^doctoralia_appt_v3:[0-9a-f]{32}$/);
+  assert.match(canonical[0].source_key, /^doctoralia_appt_v3:[0-9a-f]{64}$/);
   assert.equal(canonical[0].appointment_id, canonical[0].source_key);
   assert.equal(canonical[0].raw_data.source_key_version, 3);
 });
@@ -101,6 +101,12 @@ test('incremental planner writes only missing or changed appointments', () => {
   assert.equal(plan.inserts[0].source_key, missing.source_key);
 });
 
+test('stable identity uses SHA-256 and contains no weak MD5 path', () => {
+  const incrementalSource = readFileSync('scripts/lib/doctoralia-incremental-sync.js', 'utf8');
+  assert.match(incrementalSource, /createHash\('sha256'\)/);
+  assert.doesNotMatch(incrementalSource, /createHash\(['"]md5['"]\)/i);
+});
+
 test('governed owners contain no destructive Doctoralia path', () => {
   const syncOwner = readFileSync('scripts/sync-doctoralia-appointments.js', 'utf8');
   const dailyOwner = readFileSync('scripts/run-daily-sync.js', 'utf8');
@@ -120,5 +126,7 @@ test('governed owners contain no destructive Doctoralia path', () => {
   assert.match(migration, /drop constraint if exists doctoralia_appointments_ingestion_sheet_row_key/i);
   assert.match(migration, /trg_guard_doctoralia_appointment_delete/i);
   assert.match(migration, /financial_settlements_no_doctoralia_appointment_materialization/i);
+  assert.match(migration, /extensions\.digest/i);
+  assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
 });
