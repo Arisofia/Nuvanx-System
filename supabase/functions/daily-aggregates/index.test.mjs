@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)), 'utf8');
 
-describe('daily-aggregates external-data typing', () => {
+describe('daily-aggregates Meta ingest contract', () => {
   it('contains no explicit any annotations or casts', () => {
     expect(source).not.toMatch(/:\s*any\b/);
     expect(source).not.toMatch(/\bany\[\]/);
@@ -21,15 +21,27 @@ describe('daily-aggregates external-data typing', () => {
     expect(source).toContain('const payload: unknown = await r.json()');
   });
 
-  it('keeps campaign ranking and daily insight state explicitly typed', () => {
-    expect(source).toContain('type CampaignRankingEntry =');
-    expect(source).toContain('let processedRanking: CampaignRankingEntry[] = []');
-    expect(source).toContain('const dailyInsights: DailyInsights =');
+  it('upserts the canonical daily fact key and fails closed on ingest errors', () => {
+    expect(source).toMatch(/\.from\('meta_daily_insights'\)\s*\.upsert\(rows,\s*\{\s*onConflict:\s*'clinic_id,ad_account_id,date'\s*\}\)/);
+    expect(source).toContain("kind: 'provider_error'");
+    expect(source).toContain('if (result.failures.length > 0)');
+    expect(source).toContain('success: false');
+    expect(source).toContain("throw new Error('Meta API returned an invalid insights payload')");
+    expect(source).toContain("throw new Error('Meta API returned an invalid insights row')");
+    expect(source).toContain('AbortSignal.timeout(META_FETCH_TIMEOUT_MS)');
   });
 
-  it('narrows Gemini responses instead of traversing untyped JSON directly', () => {
-    expect(source).toContain('function geminiText(value: unknown)');
-    expect(source).toContain('const gData: unknown = await gRes.json()');
-    expect(source).toContain('geminiText(gData)');
+  it('does not run a second insight writer or Gemini path inside ingestion', () => {
+    expect(source).not.toContain('GEMINI_API_KEY');
+    expect(source).not.toContain('agent_outputs');
+    expect(source).not.toContain("agent_type: 'daily-meta-insight'");
+    expect(source).not.toContain("agent_type: 'daily-insight'");
+    expect(source).not.toContain('geminiText');
+    expect(source).not.toContain('generativelanguage.googleapis.com');
+  });
+
+  it('rejects unknown actions instead of running an implicit legacy job', () => {
+    expect(source).toContain("error: 'Unsupported action'");
+    expect(source).toContain(', 422)');
   });
 });

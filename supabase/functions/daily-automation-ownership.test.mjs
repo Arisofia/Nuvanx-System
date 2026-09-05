@@ -91,7 +91,7 @@ describe('daily automation ownership', () => {
   });
 
   it('keeps both runs idempotent on the canonical daily fact key', () => {
-    expect(aggregates).toContain(".from('meta_daily_insights').upsert(rows, { onConflict: 'clinic_id,ad_account_id,date' })");
+    expect(aggregates).toMatch(/\.from\('meta_daily_insights'\)\s*\.upsert\(rows,\s*\{\s*onConflict:\s*'clinic_id,ad_account_id,date'\s*\}\)/);
   });
 
   it('loads both legacy and canonical Meta credentials without querying a nonexistent deleted_at column', () => {
