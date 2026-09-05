@@ -201,7 +201,7 @@ Deno.serve(async (req: Request) => {
     return reply(200, {
       success: true,
       credential_owner: "supabase_meta_ads",
-      app_secret_owner: "production_edge_secret",
+      app_credential_authority: "production_edge_secret",
       appId: CANONICAL_APP_ID,
       systemUserId: CANONICAL_SYSTEM_USER_ID,
       pageId: ctx.pageId,
