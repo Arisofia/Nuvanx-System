@@ -70,7 +70,7 @@ describe('daily automation ownership', () => {
     expect(reconciliation).toContain('/rest/v1/rpc/nvx_get_runtime_secret');
     expect(reconciliation).toContain("p_name: 'REVOPS_INTERNAL_SECRET'");
     expect(reconciliation).toContain('Authorization: `Bearer ${key}`');
-    expect(reconciliation).toContain("'/functions/v1/daily-aggregates'") || expect(reconciliation).toContain('/functions/v1/daily-aggregates');
+    expect(reconciliation).toContain('/functions/v1/daily-aggregates');
     expect(reconciliation).toContain("'x-nvx-internal-secret': internalSecret");
 
     const edgeCall = reconciliation.slice(reconciliation.indexOf("fetchImpl(`${base}/functions/v1/daily-aggregates`"));
