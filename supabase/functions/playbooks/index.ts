@@ -1,10 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-};
+import { buildCorsHeaders } from '../_shared/config.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -19,6 +14,7 @@ async function getAuthUser(req: Request) {
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = buildCorsHeaders(req.headers.get('Origin'));
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   const json = (data: unknown, status = 200) =>

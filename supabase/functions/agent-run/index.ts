@@ -12,12 +12,7 @@
  *   (reads from credentials table if env not set)
  */
 import { createClient } from '@supabase/supabase-js';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS'
-};
+import { buildCorsHeaders } from '../_shared/config.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -52,7 +47,8 @@ async function callAnthropicAPI(prompt: string, context: string): Promise<{ text
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 2000,
       messages: [{ role: 'user', content: context ? `${context}\n\n${prompt}` : prompt }]
-    })
+    }),
+    signal: AbortSignal.timeout(60_000)
   });
   if (!response.ok) {
     const err = await response.text();
@@ -74,7 +70,8 @@ async function callGeminiAPI(prompt: string, context: string): Promise<{ text: s
     body: JSON.stringify({
       contents: [{ parts: [{ text: fullPrompt }] }],
       generationConfig: { maxOutputTokens: 2000 }
-    })
+      }),
+      signal: AbortSignal.timeout(60_000)
   });
   if (!response.ok) {
     const err = await response.text();
@@ -102,7 +99,8 @@ async function callOpenAIAPI(prompt: string, context: string): Promise<{ text: s
         ...(context ? [{ role: 'system', content: context }] : []),
         { role: 'user', content: prompt }
       ]
-    })
+    }),
+    signal: AbortSignal.timeout(60_000)
   });
   if (!response.ok) {
     const err = await response.text();
@@ -116,7 +114,23 @@ async function callOpenAIAPI(prompt: string, context: string): Promise<{ text: s
   };
 }
 
+type Provider = 'gemini' | 'anthropic' | 'openai';
+
+function resolveProvider(): Provider | null {
+  if (GEMINI_KEY) return 'gemini';
+  if (ANTHROPIC_KEY) return 'anthropic';
+  if (OPENAI_KEY) return 'openai';
+  return null;
+}
+
+async function runProvider(provider: Provider, prompt: string, context: string) {
+  if (provider === 'gemini') return callGeminiAPI(prompt, context);
+  if (provider === 'anthropic') return callAnthropicAPI(prompt, context);
+  return callOpenAIAPI(prompt, context);
+}
+
 Deno.serve(async (req: Request) => {
+  const cors = buildCorsHeaders(req.headers.get('Origin'));
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   const json = (data: unknown, status = 200) =>
@@ -170,7 +184,7 @@ Deno.serve(async (req: Request) => {
     const { data: settlements } = await settlementsQuery;
 
     if (clinicData) {
-      const totalNet = settlements?.reduce((s, r) => s + parseFloat(r.amount_net), 0) ?? 0;
+      const totalNet = settlements?.reduce((s, r) => s + Number.parseFloat(r.amount_net), 0) ?? 0;
       context = `You are an AI assistant for ${clinicData.name}, an aesthetic medicine clinic.\n`;
       context += `Real financial data: ${settlements?.length ?? 0} Doctoralia settlements totaling €${totalNet.toFixed(2)}.\n`;
       if (settlements && settlements.length > 0) {
@@ -185,7 +199,7 @@ Deno.serve(async (req: Request) => {
 
     // Determine which AI to use
     let result: { text: string; model: string; tokens: number };
-    const availableKey = GEMINI_KEY ? 'gemini' : ANTHROPIC_KEY ? 'anthropic' : OPENAI_KEY ? 'openai' : null;
+    const availableKey = resolveProvider();
 
     if (!availableKey) {
       // No API keys in secrets - persist a blocked record
@@ -207,11 +221,7 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-      result = availableKey === 'gemini'
-        ? await callGeminiAPI(prompt, context)
-        : availableKey === 'anthropic'
-        ? await callAnthropicAPI(prompt, context)
-        : await callOpenAIAPI(prompt, context);
+      result = await runProvider(availableKey, prompt, context);
     } catch (err: unknown) {
       const message = safeErrorMessage(err);
       const clientMessage = 'AI provider request failed';

@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import { buildCorsHeaders } from '../_shared/config.ts';
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
+  const cors = buildCorsHeaders(req.headers.get('Origin'));
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   let dbConnected = false;
@@ -20,5 +22,5 @@ Deno.serve(async (_req: Request) => {
     runtime: 'supabase-edge-function',
     persistence: dbConnected ? 'postgres' : 'unavailable',
     db: { connected: dbConnected, latencyMs: dbLatencyMs }
-  }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+  }), { headers: { ...cors, 'Content-Type': 'application/json' } });
 });

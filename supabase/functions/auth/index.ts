@@ -1,13 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS'
-};
+import { buildCorsHeaders, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts';
 
 Deno.serve(async (req: Request) => {
+  const cors = buildCorsHeaders(req.headers.get('Origin'));
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   const url  = new URL(req.url);
@@ -37,8 +32,7 @@ Deno.serve(async (req: Request) => {
     const { error: insertError } = await supabase.from('users').upsert({
       id: authData.user.id,
       email: authData.user.email ?? email,
-      name: name || '',
-      password_hash: 'supabase_auth'
+      name: name || ''
     }, { onConflict: 'id' });
     if (insertError) console.error('public.users mirror failed:', insertError.message);
 
