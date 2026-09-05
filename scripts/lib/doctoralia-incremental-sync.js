@@ -101,7 +101,7 @@ function buildStableAppointmentSourceKey(record) {
     agenda,
   ].join('|');
 
-  const digest = createHash('md5').update(canonical, 'utf8').digest('hex');
+  const digest = createHash('sha256').update(canonical, 'utf8').digest('hex');
   return `doctoralia_appt_v3:${digest}`;
 }
 
