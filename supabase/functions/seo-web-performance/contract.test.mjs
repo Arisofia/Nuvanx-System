@@ -22,10 +22,11 @@ describe('SEO web performance runtime telemetry contract', () => {
     expect(source).toContain('const DEVICES = ["mobile", "desktop"] as const;');
   });
 
-  it('persists provider failures rather than substituting estimated metrics', () => {
+  it('persists provider failures, surfaces a failed run, and never substitutes estimated metrics', () => {
     expect(source).toContain('quality_status: "unavailable"');
     expect(source).toContain('provider_contract_incomplete');
     expect(source).toContain('.from("seo_web_performance").insert(rows)');
+    expect(source).toContain('return reply(fullyAvailable ? 200 : 502');
     expect(source).not.toContain('322');
     expect(source).not.toContain('4939');
     expect(source).not.toContain('24.46');
