@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
 const {
   buildStableAppointmentSourceKey,
@@ -107,7 +107,7 @@ test('stable identity uses SHA-256 and contains no weak MD5 path', () => {
   assert.doesNotMatch(incrementalSource, /createHash\(['"]md5['"]\)/i);
 });
 
-test('there is one operational writer and no destructive parser path', () => {
+test('there is one operational writer and no destructive parser path or duplicate financial archive', () => {
   const syncOwner = readFileSync('scripts/sync-doctoralia-appointments.js', 'utf8');
   const parser = readFileSync('scripts/populate-doctoralia-appointments.js', 'utf8');
   const dailyOwner = readFileSync('scripts/run-daily-sync.js', 'utf8');
@@ -133,10 +133,14 @@ test('there is one operational writer and no destructive parser path', () => {
   assert.doesNotMatch(packageJson, /sync-doctoralia\.test\.js/);
   assert.doesNotMatch(packageJson, /DOCTORALIA_APPOINTMENTS_REPLACE_MODE=true/);
 
+  assert.equal(existsSync('supabase/migrations/20260905192900_preserve_legacy_doctoralia_financial_evidence.sql'), false);
+  assert.equal(existsSync('supabase/tests/doctoralia-financial-evidence-contract.test.mjs'), false);
+
   assert.match(migration, /drop constraint if exists doctoralia_appointments_ingestion_sheet_row_key/i);
   assert.match(migration, /trg_guard_doctoralia_appointment_delete/i);
   assert.match(migration, /financial_settlements_no_doctoralia_appointment_materialization/i);
   assert.match(migration, /extensions\.digest/i);
   assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
+  assert.doesNotMatch(migration, /doctoralia_financial_materialization_evidence/i);
 });
