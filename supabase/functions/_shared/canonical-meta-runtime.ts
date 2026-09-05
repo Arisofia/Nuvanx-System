@@ -1,7 +1,7 @@
 declare const Deno: any;
 
-const CANONICAL_APP_SECRET = 'META_CANONICAL_APP_SECRET';
-const LEGACY_APP_SECRET_ALIASES = ['META_REPORTING_APP_SECRET', 'META_APP_SECRET'] as const;
+const CANONICAL_ENV_NAME = 'META_CANONICAL_APP_SECRET';
+const RETIRED_ENV_ALIASES = ['META_REPORTING_APP_SECRET', 'META_APP_SECRET'] as const;
 
 /**
  * Canonical meta_ads runtimes have one App Secret authority in Production.
@@ -12,12 +12,12 @@ const LEGACY_APP_SECRET_ALIASES = ['META_REPORTING_APP_SECRET', 'META_APP_SECRET
  * aliases cannot silently rescue a stale/missing canonical secret.
  */
 export function enforceCanonicalMetaRuntimeBoundary(): void {
-  const canonical = String(Deno.env.get(CANONICAL_APP_SECRET) || '').trim();
+  const canonical = String(Deno.env.get(CANONICAL_ENV_NAME) || '').trim();
   if (!canonical) {
-    throw new Error(`${CANONICAL_APP_SECRET} is required for canonical meta_ads runtime`);
+    throw new Error(`${CANONICAL_ENV_NAME} is required for canonical meta_ads runtime`);
   }
 
-  for (const alias of LEGACY_APP_SECRET_ALIASES) {
+  for (const alias of RETIRED_ENV_ALIASES) {
     Deno.env.delete(alias);
   }
 }
