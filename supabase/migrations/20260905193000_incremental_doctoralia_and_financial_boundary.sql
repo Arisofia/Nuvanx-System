@@ -261,13 +261,13 @@ execute function public.nvx_guard_doctoralia_appointment_delete();
 delete from public.financial_settlements
 where pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) = 'doctoralia';
 
-alter table public.financial_settlements
+alter table if exists public.financial_settlements
   drop constraint if exists financial_settlements_no_doctoralia_appointment_materialization;
-alter table public.financial_settlements
+alter table if exists public.financial_settlements
   add constraint financial_settlements_no_doctoralia_appointment_materialization
   check (pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) <> 'doctoralia')
   not valid;
-alter table public.financial_settlements
+alter table if exists public.financial_settlements
   validate constraint financial_settlements_no_doctoralia_appointment_materialization;
 
 comment on table public.financial_settlements is
