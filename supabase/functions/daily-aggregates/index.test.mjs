@@ -22,7 +22,7 @@ describe('daily-aggregates Meta ingest contract', () => {
   });
 
   it('upserts the canonical daily fact key and fails closed on ingest errors', () => {
-    expect(source).toContain(".from('meta_daily_insights').upsert(rows, { onConflict: 'clinic_id,ad_account_id,date' })");
+    expect(source).toMatch(/\.from\('meta_daily_insights'\)\s*\.upsert\(rows,\s*\{\s*onConflict:\s*'clinic_id,ad_account_id,date'\s*\}\)/);
     expect(source).toContain("kind: 'provider_error'");
     expect(source).toContain('if (result.failures.length > 0)');
     expect(source).toContain('success: false');
