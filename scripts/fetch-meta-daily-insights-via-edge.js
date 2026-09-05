@@ -32,8 +32,11 @@ function resolveDateRange(now = new Date()) {
   const to = requestedTo || now.toISOString().slice(0, 10);
   assertIsoDate(to, 'Meta insights to date');
 
+  // Preserve the workflow's prior semantics exactly: when `from` is omitted,
+  // use the first day of the current UTC month even if an explicit `to` date
+  // points at a different month.
   const requestedFrom = parseArg('from') || env('FROM_DATE_INPUT');
-  const from = requestedFrom || `${to.slice(0, 7)}-01`;
+  const from = requestedFrom || `${now.toISOString().slice(0, 7)}-01`;
   assertIsoDate(from, 'Meta insights from date');
   if (from > to) throw new Error('Meta insights from date must not be after to date');
   return { from, to };
