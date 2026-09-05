@@ -71,7 +71,10 @@ function patientIdentity(record) {
   const patientName = normalizeKeyPart(record?.patient_name);
   if (patientName) return `name:${patientName}`;
 
-  throw new Error('Doctoralia appointment cannot be keyed without patient identity');
+  const subject = normalizeKeyPart(record?.subject);
+  if (subject) return `subject:${subject}`;
+
+  throw new Error('Doctoralia appointment cannot be keyed without patient identity evidence');
 }
 
 /**
