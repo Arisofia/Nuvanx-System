@@ -25,13 +25,45 @@ jobs:
       deployed_sha: ${{ steps.proof.outputs.deployed_sha }}
 
     steps:
-      - name: Checkout provenance qualifier
+      - name: Qualify trusted upstream envelope
+        id: envelope
+        shell: bash
+        env:
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${DEPLOYED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${UPSTREAM_EVENT:-}" != "workflow_run" ]]; then
+            echo "::error::Upstream deploy workflow was triggered by '${UPSTREAM_EVENT:-}', not trusted Master workflow_run."
+            exit 1
+          fi
+          if [[ "${UPSTREAM_BRANCH:-}" != "main" ]]; then
+            echo "::error::Upstream deploy workflow branch is '${UPSTREAM_BRANCH:-}', not main."
+            exit 1
+          fi
+          if [[ "${UPSTREAM_CONCLUSION:-}" == "skipped" ]]; then
+            echo "applicable=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream deploy workflow was skipped; no Production Edge mutation occurred and runtime acceptance is not applicable."
+            exit 0
+          fi
+          if [[ "${UPSTREAM_CONCLUSION:-}" != "success" ]]; then
+            echo "::error::Upstream deploy workflow conclusion is '${UPSTREAM_CONCLUSION:-}', not success."
+            exit 1
+          fi
+          echo "applicable=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted deployed candidate
+        if: ${{ steps.envelope.outputs.applicable == 'true' }}
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Prove governed Edge deployment actually ran
+        if: ${{ steps.envelope.outputs.applicable == 'true' }}
         id: proof
         shell: bash
         env:
