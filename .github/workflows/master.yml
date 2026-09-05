@@ -31,11 +31,6 @@ on:
         description: End date for Meta insights (YYYY-MM-DD)
         required: false
         type: string
-      expected_doctoralia_count:
-        description: Expected Doctoralia opinion count for read-only audit
-        required: false
-        default: '98'
-        type: string
 
 permissions:
   contents: read
@@ -603,7 +598,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      EXPECTED_DOCTORALIA_COUNT: ${{ inputs.expected_doctoralia_count || '98' }}
       OUT_DIR: tmp/social-proof-audit
     steps:
       - name: Checkout
