@@ -7,17 +7,25 @@ const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830090000_harden_whatsapp_outbound_delivery.sql", import.meta.url)),
   "utf8",
 );
+const acceptanceMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260905173500_whatsapp_test_waba_acceptance.sql", import.meta.url)),
+  "utf8",
+);
+const executableAcceptanceMigration = acceptanceMigration
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--.*$/gm, "");
 
 describe("WhatsApp delivery status webhook contract", () => {
-  it("supports Meta verification without exposing the verify token", () => {
+  it("supports canonical and Test WABA verification without exposing verify tokens", () => {
     expect(source).toContain('hub.mode');
     expect(source).toContain('hub.verify_token');
     expect(source).toContain('hub.challenge');
     expect(source).toContain('META_WEBHOOK_VERIFY_TOKEN');
+    expect(source).toContain('WHATSAPP_TEST_WEBHOOK_VERIFY_TOKEN');
     expect(source).not.toContain('verify_token: VERIFY_TOKEN');
   });
 
-  it("requires the raw-body Meta HMAC before parsing or applying status updates", () => {
+  it("requires a raw-body Meta HMAC before parsing or applying status updates", () => {
     const readBody = source.indexOf('const rawBody = await req.text()');
     const signatureCheck = source.indexOf('verifyMetaSignature(req, rawBody)');
     const parse = source.indexOf('JSON.parse(rawBody)');
@@ -30,13 +38,24 @@ describe("WhatsApp delivery status webhook contract", () => {
     expect(source).toContain('timingSafeEqualHex');
   });
 
+  it("isolates a distinct Test WABA app signature from patient delivery state", () => {
+    expect(source).toContain('type SignatureScope = "production" | "test"');
+    expect(source).toContain('WHATSAPP_TEST_APP_SECRET');
+    expect(source).toContain('if (signatureScope === "production")');
+    expect(source).toContain('rpc("nvx_apply_whatsapp_status"');
+    expect(source).toContain('rpc("nvx_apply_whatsapp_provider_acceptance_status"');
+    expect(source.indexOf('if (signatureScope === "production")')).toBeLessThan(
+      source.indexOf('rpc("nvx_apply_whatsapp_status"'),
+    );
+  });
+
   it("processes the complete signed provider batch and retries persistence failures", () => {
     expect(source).toContain('["sent", "delivered", "read", "failed"]');
     expect(source).toContain('for (const item of statuses)');
     expect(source).not.toContain('statuses.slice(0, 100)');
     expect(source).toContain('p_provider_message_id: messageId');
     expect(source).toContain('p_event_at: eventTime');
-    expect(source).toContain('if (error) failed += 1');
+    expect(source).toContain('if (persistenceFailed) failed += 1');
     expect(source).toContain('if (failed > 0)');
     expect(source).toContain('}, 503)');
   });
@@ -55,6 +74,15 @@ describe("WhatsApp delivery status webhook contract", () => {
     expect(migration).toContain('if not exists (');
     expect(migration).not.toContain('lead_events_whatsapp_message_status_uidx');
     expect(migration).not.toContain('whatsapp_conversations_wa_message_id_uidx');
+  });
+
+  it("keeps Test WABA executable persistence outside lead and patient tables", () => {
+    expect(executableAcceptanceMigration).toContain('create table if not exists public.whatsapp_provider_acceptance_runs');
+    expect(executableAcceptanceMigration).toContain('recipient_sha256 text not null');
+    expect(executableAcceptanceMigration).toContain('message_sha256 text not null');
+    expect(executableAcceptanceMigration).not.toContain('lead_id');
+    expect(executableAcceptanceMigration).not.toContain('normalized_phone');
+    expect(executableAcceptanceMigration).not.toContain('whatsapp_rate_limit_config');
   });
 
   it("never regresses conversation delivery state when callbacks arrive out of order", () => {

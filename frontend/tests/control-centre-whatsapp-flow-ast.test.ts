@@ -152,14 +152,21 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     expect(workerCallback.type).toBe('ArrowFunctionExpression')
 
     const claim = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('nvx_claim_whatsapp_outbound_payload'))
-    const providerFetch = walk(workerCallback).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('fetch(`https://graph.facebook.com/'))
+    const markSending = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('markSending(admin, row)'))
+    const providerCall = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('sendWhatsAppText'))
     const missingMessageId = findIf(workerCallback, workerSource, '!messageId')
-    const acceptedFinalize = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('finalizeSend(admin, row, "accepted"'))
+    const acceptedFinalize = walk(workerCallback).find((node) => {
+      if (node.type !== 'AwaitExpression') return false
+      const nodeText = text(workerSource, node)
+      return nodeText.includes('finalizeSend(') && nodeText.includes('"accepted"')
+    })
 
     expect(claim).toBeDefined()
-    expect(providerFetch).toBeDefined()
+    expect(markSending).toBeDefined()
+    expect(providerCall).toBeDefined()
     expect(acceptedFinalize).toBeDefined()
-    expect(claim!.range![0]).toBeLessThan(providerFetch!.range![0])
+    expect(claim!.range![0]).toBeLessThan(markSending!.range![0])
+    expect(markSending!.range![0]).toBeLessThan(providerCall!.range![0])
     expect(missingMessageId.range![0]).toBeLessThan(acceptedFinalize!.range![0])
   })
 })

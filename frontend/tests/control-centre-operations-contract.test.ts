@@ -169,6 +169,7 @@ describe('NUVANX Control Centre operations contract', () => {
   it('authorizes, encrypts and queues before async provider delivery', () => {
     const enqueue = read('../../supabase/functions/whatsapp-send/index.ts')
     const worker = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
+    const provider = read('../../supabase/functions/_shared/whatsapp-provider.ts')
     expectOrdered(
       enqueue,
       'const auth = await authenticatedContext(req)',
@@ -184,9 +185,11 @@ describe('NUVANX Control Centre operations contract', () => {
       worker,
       'message = await decryptMessage(row, keyring)',
       'await markSending(admin, row)',
-      'waRes = await fetch',
+      'const outcome = await sendWhatsAppText',
     )
-    expect(worker).toContain('AbortSignal.timeout(PROVIDER_TIMEOUT_MS)')
-    expect(worker).toContain('if (!messageId)')
+    expect(worker).not.toContain('graph.facebook.com')
+    expect(provider).toContain('AbortSignal.timeout(timeoutMs)')
+    expect(provider).toContain('if (!providerMessageId)')
+    expect(provider).toContain('https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages')
   })
 })

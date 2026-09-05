@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+const provider = readFileSync(fileURLToPath(new URL("../_shared/whatsapp-provider.ts", import.meta.url)), "utf8");
 const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260901190000_async_whatsapp_encrypted_outbox.sql", import.meta.url)),
   "utf8",
@@ -50,42 +51,48 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(migration).toContain("claim_attempts between 0 and 3");
   });
 
-  it("purges ciphertext before the irreversible provider request", () => {
+  it("purges ciphertext before the irreversible shared provider request", () => {
     ordered(
       source,
       "message = await decryptMessage(row, keyring)",
       "await markSending(admin, row)",
-      "waRes = await fetch(`https://graph.facebook.com/",
+      "const outcome = await sendWhatsAppText",
     );
+    expect(source).toContain('import { sendWhatsAppText } from "../_shared/whatsapp-provider.ts"');
     expect(migration).toContain("set state = 'sending'");
     expect(migration).toContain("ciphertext = null");
     expect(migration).toContain("provider_attempt_started_at = pg_catalog.clock_timestamp()");
   });
 
+  it("centralizes the irreversible Meta transport for production and Test WABA acceptance", () => {
+    expect(provider).toContain("https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages");
+    expect(provider).toContain('Authorization: `Bearer ${accessToken}`');
+    expect(provider).toContain('recipient_type: "individual"');
+    expect(provider).toContain('type: "text"');
+    expect(source).not.toContain("https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages");
+  });
+
   it("never auto-retries ambiguous provider outcomes", () => {
-    const transportStart = source.indexOf("catch (error: unknown)");
-    const providerErrorStart = source.indexOf("const explicitProviderError");
-    expect(transportStart, "transport catch anchor missing").toBeGreaterThan(-1);
-    expect(providerErrorStart, "provider error anchor missing").toBeGreaterThan(transportStart);
-    const transport = source.slice(transportStart, providerErrorStart);
-    expect(transport).toContain('row,\n        "unknown",\n        null,\n        null,');
-    expect(transport).toContain("Meta provider outcome is unknown after transport failure");
+    expect(source).toContain('const manualReview = outcome.status === "unknown"');
+    expect(source).toContain("await finishPayload(admin, row, manualReview)");
+    expect(provider).toContain('status: "unknown"');
+    expect(provider).toContain("Meta provider outcome is unknown after transport failure");
+    expect(provider).toContain("const ambiguous = response.status >= 500");
+    expect(provider).toContain('status: ambiguous ? "unknown" : "failed"');
     expect(migration).toContain("Worker outcome requires manual review; automatic resend is blocked");
     expect(migration).toContain("p.state = 'sending'");
     expect(migration).toContain("else 'manual_review'");
   });
 
   it("terminalizes a payload only after the request ledger finalization succeeds", () => {
-    const transportStart = source.indexOf("catch (error: unknown)");
-    const providerErrorStart = source.indexOf("const explicitProviderError");
-    expect(transportStart, "transport catch anchor missing").toBeGreaterThan(-1);
-    expect(providerErrorStart, "provider error anchor missing").toBeGreaterThan(transportStart);
-    const transport = source.slice(transportStart, providerErrorStart);
-    expect(transport).toContain("const ledgerTracked = await finalizeSend(");
-    expect(transport).toContain("if (ledgerTracked) await finishPayload(admin, row, true)");
-
-    const acceptedStart = source.lastIndexOf("const ledgerTracked = await finalizeSend");
-    expect(acceptedStart, "accepted ledger finalization anchor missing").toBeGreaterThan(-1);
+    const nonAcceptedStart = source.indexOf('if (outcome.status !== "accepted")');
+    const acceptedStart = source.lastIndexOf("const ledgerTracked = await finalizeSend(");
+    expect(nonAcceptedStart).toBeGreaterThan(-1);
+    expect(acceptedStart).toBeGreaterThan(nonAcceptedStart);
+    const nonAccepted = source.slice(nonAcceptedStart, acceptedStart);
+    expect(nonAccepted).toContain("const ledgerTracked = await finalizeSend(");
+    expect(nonAccepted).toContain("if (ledgerTracked)");
+    expect(nonAccepted).toContain("await finishPayload(admin, row, manualReview)");
     const accepted = source.slice(acceptedStart);
     expect(accepted).toContain("if (ledgerTracked)");
     expect(accepted).toContain("await finishPayload(admin, row, false)");
@@ -100,23 +107,18 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(lateAttemptMigration).not.toContain("state = 'queued'");
   });
 
-  it("treats HTTP 5xx and success-without-message-id as ambiguous", () => {
-    expect(source).toContain("const ambiguous = waRes.status >= 500");
-    expect(source).toContain('ambiguous ? "unknown" : "failed"');
-    expect(source).toContain("if (!messageId)");
-    expect(source).toContain("missing_provider_message_id");
-  });
-
-  it("logs provider body-read failures without changing the no-retry outcome", () => {
-    expect(source).toContain("provider body read failed request=${row.request_id} status=${waRes.status} reason=${reason}");
-    expect(source).toContain("return {};");
-    expect(source).toContain("if (!messageId)");
+  it("treats HTTP 5xx and success-without-message-id as ambiguous in the shared provider", () => {
+    expect(provider).toContain("const ambiguous = response.status >= 500");
+    expect(provider).toContain('status: ambiguous ? "unknown" : "failed"');
+    expect(provider).toContain("if (!providerMessageId)");
+    expect(provider).toContain("missing_provider_message_id");
+    expect(source).toContain("Shared provider transport classifies this as unknown");
   });
 
   it("preserves SLA telemetry as non-authoritative after provider acceptance", () => {
     ordered(
       source,
-      'finalizeSend(admin, row, "accepted", messageId',
+      '"accepted",\n      messageId',
       "await finishPayload(admin, row, false)",
       "await trackFirstHumanResponse(admin, row, messageId)",
     );
