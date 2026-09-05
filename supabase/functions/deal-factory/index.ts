@@ -10,6 +10,7 @@ const HUBSPOT_BASE = "https://api.hubapi.com";
 const API_VERSION = "v3";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+const CLAIM_LEASE_SECONDS = 300;
 let cachedDefaultDealContactAssociationTypeId: number | null = null;
 let runtimeHubspotToken = HUBSPOT_ACCESS_TOKEN_ENV.trim();
 
@@ -194,52 +195,84 @@ async function updateExistingDeal(dealId: string, lead: any, projection: any) {
   return dealId;
 }
 
-async function processProjection(admin: any, projection: any) {
-  const now = new Date().toISOString();
-  const { data: lead, error: leadError } = await admin
-    .from("leads")
-    .select("id,source,stage,revenue,verified_revenue,appointment_date,attended_at,first_response_at,first_outbound_at,hubspot_contact_id,hubspot_deal_id")
-    .eq("id", projection.lead_id)
-    .is("deleted_at", null)
-    .single();
-  if (leadError || !lead) throw new Error("Projection lead missing");
-  const sourceNorm = String(lead.source || "").toLowerCase().trim();
-  const validSources = new Set([
-    "website_hubspot",
-    "meta_leadgen",
-    "meta_instant_form",
-    "meta_ads",
-    "meta",
-    "facebook",
-    "instagram",
-    "website",
-    "landing_page",
-    "whatsapp",
-    "direct",
-    "phone",
-    "doctoralia",
-  ]);
-  if (!validSources.has(sourceNorm)) throw new Error(`Unsupported lead source for Deal Factory: ${lead.source}`);
-  if (String(lead.hubspot_contact_id || "") !== String(projection.hubspot_contact_id || "")) throw new Error("Contact projection mismatch");
+async function finalizeProjection(
+  admin: any,
+  projection: any,
+  outcome: "success" | "failed" | "suppressed",
+  details: { dealId?: string | null; stageId?: string | null; amount?: number | null; error?: string | null } = {},
+): Promise<string> {
+  const claimToken = String(projection?.claim_token || "").trim();
+  if (!claimToken) return "claim_lost";
 
+  const numericDealId = details.dealId && /^\d+$/.test(details.dealId) ? Number(details.dealId) : null;
+  const { data, error } = await admin.rpc("nvx_finalize_hubspot_deal_projection", {
+    p_lead_id: projection.lead_id,
+    p_claim_token: claimToken,
+    p_outcome: outcome,
+    p_hubspot_deal_id: numericDealId,
+    p_stage_id: details.stageId || null,
+    p_amount: details.amount ?? null,
+    p_error: details.error || null,
+  });
+  if (error) throw new Error("Projection finalization unavailable");
+  return String(data || "claim_lost");
+}
+
+async function failClaim(admin: any, projection: any, error: unknown) {
+  const message = String((error as any)?.message || "Deal projection failed").slice(0, 240);
   try {
-    await verifyContact(String(projection.hubspot_contact_id));
-  } catch (error: any) {
-    if (String(error?.message || "").includes("QA contact")) {
-      await admin.from("hubspot_deal_projections").update({ projection_status: "suppressed", last_error: null, updated_at: now }).eq("lead_id", lead.id);
-      return { lead_id: lead.id, outcome: "suppressed" };
+    const finalStatus = await finalizeProjection(admin, projection, "failed", { error: message });
+    if (finalStatus === "claim_lost") {
+      return { lead_id: projection.lead_id, outcome: "claim_lost" };
     }
-    throw error;
+  } catch (finalizeError: any) {
+    console.error(`[deal-factory] lead=${projection.lead_id} finalize_error=${String(finalizeError?.message || "error").slice(0, 120)}`);
+    return { lead_id: projection.lead_id, outcome: "finalize_error" };
   }
+  return { lead_id: projection.lead_id, outcome: "failed", error: message };
+}
 
-  await admin.from("hubspot_deal_projections").update({
-    projection_status: projection.hubspot_deal_id ? "updating" : "creating",
-    attempt_count: Number(projection.attempt_count || 0) + 1,
-    last_error: null,
-    updated_at: now,
-  }).eq("lead_id", lead.id);
-
+async function processProjection(admin: any, projection: any) {
   try {
+    const { data: lead, error: leadError } = await admin
+      .from("leads")
+      .select("id,source,stage,revenue,verified_revenue,appointment_date,attended_at,first_response_at,first_outbound_at,hubspot_contact_id,hubspot_deal_id")
+      .eq("id", projection.lead_id)
+      .is("deleted_at", null)
+      .single();
+    if (leadError || !lead) throw new Error("Projection lead missing");
+
+    const sourceNorm = String(lead.source || "").toLowerCase().trim();
+    const validSources = new Set([
+      "website_hubspot",
+      "meta_leadgen",
+      "meta_instant_form",
+      "meta_ads",
+      "meta",
+      "facebook",
+      "instagram",
+      "website",
+      "landing_page",
+      "whatsapp",
+      "direct",
+      "phone",
+      "doctoralia",
+    ]);
+    if (!validSources.has(sourceNorm)) throw new Error(`Unsupported lead source for Deal Factory: ${lead.source}`);
+    if (String(lead.hubspot_contact_id || "") !== String(projection.hubspot_contact_id || "")) {
+      throw new Error("Contact projection mismatch");
+    }
+
+    try {
+      await verifyContact(String(projection.hubspot_contact_id));
+    } catch (error: any) {
+      if (String(error?.message || "").includes("QA contact")) {
+        const finalStatus = await finalizeProjection(admin, projection, "suppressed");
+        return { lead_id: lead.id, outcome: finalStatus === "claim_lost" ? "claim_lost" : "suppressed" };
+      }
+      throw error;
+    }
+
     let result;
     const knownDealId = String(projection.hubspot_deal_id || lead.hubspot_deal_id || "");
     if (/^\d+$/.test(knownDealId)) {
@@ -249,22 +282,25 @@ async function processProjection(admin: any, projection: any) {
       result = await createOrRecoverDeal(lead, projection);
     }
 
-    await admin.from("hubspot_deal_projections").update({
-      hubspot_deal_id: result.id,
-      stage_id: chooseStage(lead),
-      amount: Number(lead.verified_revenue || lead.revenue || 0) || null,
-      projection_status: "created",
-      projected_at: now,
-      last_error: null,
-      updated_at: now,
-    }).eq("lead_id", lead.id);
+    const amountValue = Number(lead.verified_revenue || lead.revenue || 0);
+    const stageId = chooseStage(lead);
+    const finalStatus = await finalizeProjection(admin, projection, "success", {
+      dealId: result.id,
+      stageId,
+      amount: Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null,
+    });
 
-    await admin.from("leads").update({ hubspot_deal_id: result.id, updated_at: now }).eq("id", lead.id);
+    if (finalStatus === "claim_lost") {
+      return { lead_id: lead.id, hubspot_deal_id: result.id, outcome: "claim_lost" };
+    }
+
+    await admin.from("leads").update({ hubspot_deal_id: result.id, updated_at: new Date().toISOString() }).eq("id", lead.id);
+    if (finalStatus === "pending") {
+      return { lead_id: lead.id, hubspot_deal_id: result.id, outcome: "requeued" };
+    }
     return { lead_id: lead.id, hubspot_deal_id: result.id, outcome: result.created ? "created" : "updated" };
   } catch (error: any) {
-    const message = String(error?.message || "Deal projection failed").slice(0, 240);
-    await admin.from("hubspot_deal_projections").update({ projection_status: "failed", last_error: message, updated_at: now }).eq("lead_id", lead.id);
-    return { lead_id: lead.id, outcome: "failed", error: message };
+    return await failClaim(admin, projection, error);
   }
 }
 
@@ -285,31 +321,25 @@ Deno.serve(async (req: Request) => {
     return json({ success: false, message: "Server configuration error" }, 500);
   }
 
-  const { data: rows, error } = await admin
-    .from("hubspot_deal_projections")
-    .select("lead_id,hubspot_contact_id,hubspot_deal_id,pipeline_id,stage_id,owner_id,amount,currency_code,projection_status,attempt_count")
-    .in("projection_status", ["pending", "failed", "created"])
-    .order("updated_at", { ascending: true })
-    .limit(limit);
+  const { data: rows, error } = await admin.rpc("nvx_claim_hubspot_deal_projections", {
+    p_limit: limit,
+    p_lease_seconds: CLAIM_LEASE_SECONDS,
+  });
   if (error) return json({ success: false, message: "Projection queue unavailable" }, 500);
 
   const results = [];
   for (const projection of rows || []) {
-    try {
-      results.push(await processProjection(admin, projection));
-    } catch (error: any) {
-      const message = String(error?.message || "Projection failed").slice(0, 240);
-      await admin.from("hubspot_deal_projections").update({ projection_status: "failed", last_error: message, updated_at: new Date().toISOString() }).eq("lead_id", projection.lead_id);
-      results.push({ lead_id: projection.lead_id, outcome: "failed", error: message });
-    }
+    results.push(await processProjection(admin, projection));
   }
 
   return json({
     success: true,
     processed: results.length,
     created_or_updated: results.filter((r: any) => r.outcome === "created" || r.outcome === "updated").length,
+    requeued: results.filter((r: any) => r.outcome === "requeued").length,
     suppressed: results.filter((r: any) => r.outcome === "suppressed").length,
-    failed: results.filter((r: any) => r.outcome === "failed").length,
+    failed: results.filter((r: any) => r.outcome === "failed" || r.outcome === "finalize_error").length,
+    claim_lost: results.filter((r: any) => r.outcome === "claim_lost").length,
     results,
   });
 });
