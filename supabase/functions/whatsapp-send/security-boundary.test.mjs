@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 const worker = readFileSync(fileURLToPath(new URL("../whatsapp-outbound-worker/index.ts", import.meta.url)), "utf8");
+const provider = readFileSync(fileURLToPath(new URL("../_shared/whatsapp-provider.ts", import.meta.url)), "utf8");
 const config = readFileSync(fileURLToPath(new URL("../_shared/config.ts", import.meta.url)), "utf8");
 const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830090000_harden_whatsapp_outbound_delivery.sql", import.meta.url)),
@@ -59,7 +60,10 @@ describe("WhatsApp browser and recipient security boundary", () => {
     expect(source).not.toContain("graph.facebook.com");
     expect(worker).toContain("WHATSAPP_ACCESS_TOKEN");
     expect(worker).toContain("WHATSAPP_PHONE_NUMBER_ID");
-    expect(worker).toContain("graph.facebook.com");
+    expect(worker).toContain('import { sendWhatsAppText } from "../_shared/whatsapp-provider.ts"');
+    expect(worker).not.toContain("graph.facebook.com");
+    expect(provider).toContain("https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages");
+    expect(provider).toContain('Authorization: `Bearer ${accessToken}`');
   });
 
   it("requires authentication and encryption before the atomic async reservation", () => {
