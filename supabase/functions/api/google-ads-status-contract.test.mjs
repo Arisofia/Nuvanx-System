@@ -44,4 +44,25 @@ describe('Google Ads status output contract', () => {
     expect(checker).not.toContain(".from('integrations')");
     expect(checker).not.toContain('encrypted_key');
   });
+
+  it('handles multiple connected accounts without maybeSingle throwing 500', () => {
+    const start = api.indexOf('async function handleGoogleAdsStatusGet');
+    const end = api.indexOf('async function handleGoogleAdsInsightsGet', start);
+    const section = api.slice(start, end);
+    expect(section).not.toContain('.maybeSingle()');
+    expect(section).toContain(".order('updated_at', { ascending: false })");
+    expect(section).toContain('customerIds');
+  });
+
+  it('falls back seamlessly to google_ads_daily_insights when live queries are unavailable', () => {
+    const startInsights = api.indexOf('async function handleGoogleAdsInsightsGet');
+    const endInsights = api.indexOf('async function handleGoogleAdsCampaignsGet', startInsights);
+    const insightsSection = api.slice(startInsights, endInsights);
+    expect(insightsSection).toContain(".from('google_ads_daily_insights')");
+
+    const startCampaigns = endInsights;
+    const endCampaigns = api.indexOf('function calculateAvgLiquidationDays', startCampaigns);
+    const campaignsSection = api.slice(startCampaigns, endCampaigns);
+    expect(campaignsSection).toContain(".from('google_ads_daily_insights')");
+  });
 });
