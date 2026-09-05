@@ -7,6 +7,10 @@ const deployWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/deploy-standalone-edge-functions.yml", import.meta.url)),
   "utf8",
 );
+const ownerAuthorityMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260905183000_hubspot_owner_authority.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("Meta to HubSpot reconciliation contract", () => {
   it("enriches already-linked HubSpot contacts instead of skipping them", () => {
@@ -40,6 +44,29 @@ describe("Meta to HubSpot reconciliation contract", () => {
     }
     expect(source).toContain('put("nvx_utm_source", lead?.utm_source || "facebook")');
     expect(source).toContain('put("nvx_utm_medium", lead?.utm_medium || "paid_social")');
+  });
+
+  it("inherits provider owner authority without name/email heuristics", () => {
+    expect(source).toContain('"hubspot_owner_id"');
+    expect(source).toContain("function hubspotOwnerId(contact: any)");
+    expect(source).toContain('admin.rpc("nvx_apply_hubspot_owner_authority"');
+    expect(source).toContain("p_hubspot_owner_id: hubspotOwnerId(contact)");
+    expect(source).not.toMatch(/owner.*(?:email|name)|(?:email|name).*owner/i);
+
+    expect(ownerAuthorityMigration).toContain("create table if not exists public.hubspot_owner_user_mappings");
+    expect(ownerAuthorityMigration).toContain("hubspot_owner_id text primary key");
+    expect(ownerAuthorityMigration).toContain("user_id uuid not null references public.users(id)");
+    expect(ownerAuthorityMigration).toContain("create or replace function public.nvx_apply_hubspot_owner_authority");
+    expect(ownerAuthorityMigration).toContain("assigned_to = case");
+    expect(ownerAuthorityMigration).toContain("when v_owner_id is null then l.assigned_to");
+    expect(ownerAuthorityMigration).toContain("needs_reprojection = case");
+  });
+
+  it("preserves active Deal projection claims when provider owner changes", () => {
+    expect(ownerAuthorityMigration).toContain("projection_status in ('creating', 'updating')");
+    expect(ownerAuthorityMigration).toContain("then public.hubspot_deal_projections.projection_status");
+    expect(ownerAuthorityMigration).toContain("then true");
+    expect(ownerAuthorityMigration).toContain("else public.hubspot_deal_projections.needs_reprojection");
   });
 
   it("preserves linked-contact audit mode without mutation", () => {
